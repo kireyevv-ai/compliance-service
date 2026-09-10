@@ -28,6 +28,10 @@ export function evaluateRule(scan: Scan, rule: Rule, index: FactIndex): RuleEval
     return noEvaluation(rule, `Unsupported evaluator_type=${rule.evaluatorType}`);
   }
 
+  if (rule.evaluation.kind !== "FACT_PATTERN") {
+    return noEvaluation(rule, `Unsupported deterministic evaluation kind=${rule.evaluation.kind}`);
+  }
+
   if (!rule.appliesTo.includes(scan.siteType)) {
     return noEvaluation(rule, `Rule does not apply to site_type=${scan.siteType}`);
   }

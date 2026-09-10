@@ -1,0 +1,137 @@
+[
+  {
+    "rule_id": "PD-008",
+    "version": "0.2-shadow",
+    "title": "Consent text states a concrete personal-data processing purpose",
+    "pass_summary": "Consent text contains a concrete personal-data processing purpose.",
+    "module": "PERSONAL_DATA",
+    "evaluator_type": "LLM_SEMANTIC",
+    "legal_strength": "MANDATORY",
+    "status_if_triggered": "FAIL",
+    "applies_to": ["B2B", "B2C_SERVICE", "ECOMMERCE", "OTHER"],
+    "required_facts": ["consent_text"],
+    "evidence_requirements": ["consent_text", "rendered_consent_text"],
+    "legal_basis": [],
+    "severity": "MEDIUM",
+    "evaluation": {
+      "kind": "SEMANTIC_CRITERION",
+      "criterion": "Determine whether the supplied consent text clearly states at least one concrete purpose for personal-data processing. Return PASS when a concrete purpose is stated, FAIL when consent is requested but no concrete purpose is stated, and MANUAL_CHECK when the excerpt is too fragmented or ambiguous.",
+      "evidence_fact_types": ["consent_text", "rendered_consent_text"]
+    },
+    "remediation": "Keep remediation in application logic; this shadow rule does not create user-facing findings.",
+    "confidence_policy": {
+      "fixed_confidence": 0.8
+    },
+    "limitations": ["Shadow-mode semantic pilot only. Does not create production Findings."],
+    "effective_from": "2026-09-10",
+    "last_verified_at": "2026-09-10"
+  },
+  {
+    "rule_id": "PD-013",
+    "version": "0.2-shadow",
+    "title": "Privacy policy describes personal-data processing purposes",
+    "pass_summary": "Privacy policy text describes personal-data processing purposes.",
+    "module": "PERSONAL_DATA",
+    "evaluator_type": "LLM_SEMANTIC",
+    "legal_strength": "MANDATORY",
+    "status_if_triggered": "FAIL",
+    "applies_to": ["B2B", "B2C_SERVICE", "ECOMMERCE", "OTHER"],
+    "required_facts": ["privacy_policy_text"],
+    "evidence_requirements": ["privacy_policy_text"],
+    "legal_basis": [],
+    "severity": "MEDIUM",
+    "evaluation": {
+      "kind": "SEMANTIC_CRITERION",
+      "criterion": "Determine whether the supplied privacy policy text describes purposes for personal-data processing. Return PASS when purposes are described, FAIL when the text is clearly a privacy policy but processing purposes are absent, and MANUAL_CHECK when the text is ambiguous, incomplete, or insufficient.",
+      "evidence_fact_types": ["privacy_policy_text"]
+    },
+    "remediation": "Keep remediation in application logic; this shadow rule does not create user-facing findings.",
+    "confidence_policy": {
+      "fixed_confidence": 0.8
+    },
+    "limitations": ["Shadow-mode semantic pilot only. Does not create production Findings."],
+    "effective_from": "2026-09-10",
+    "last_verified_at": "2026-09-10"
+  },
+  {
+    "rule_id": "PD-014",
+    "version": "0.2-shadow",
+    "title": "Privacy policy describes categories of personal data",
+    "pass_summary": "Privacy policy text describes personal-data categories.",
+    "module": "PERSONAL_DATA",
+    "evaluator_type": "LLM_SEMANTIC",
+    "legal_strength": "MANDATORY",
+    "status_if_triggered": "FAIL",
+    "applies_to": ["B2B", "B2C_SERVICE", "ECOMMERCE", "OTHER"],
+    "required_facts": ["privacy_policy_text"],
+    "evidence_requirements": ["privacy_policy_text"],
+    "legal_basis": [],
+    "severity": "MEDIUM",
+    "evaluation": {
+      "kind": "SEMANTIC_CRITERION",
+      "criterion": "Determine whether the supplied privacy policy text describes categories or examples of personal data being processed. Return PASS when categories or concrete examples are described, FAIL when the text is clearly a privacy policy but data categories are absent, and MANUAL_CHECK when the text is ambiguous, incomplete, or insufficient.",
+      "evidence_fact_types": ["privacy_policy_text"]
+    },
+    "remediation": "Keep remediation in application logic; this shadow rule does not create user-facing findings.",
+    "confidence_policy": {
+      "fixed_confidence": 0.8
+    },
+    "limitations": ["Shadow-mode semantic pilot only. Does not create production Findings."],
+    "effective_from": "2026-09-10",
+    "last_verified_at": "2026-09-10"
+  },
+  {
+    "rule_id": "PD-015",
+    "version": "0.2-shadow",
+    "title": "Privacy policy describes retention or deletion handling",
+    "pass_summary": "Privacy policy text describes retention or deletion handling.",
+    "module": "PERSONAL_DATA",
+    "evaluator_type": "LLM_SEMANTIC",
+    "legal_strength": "MANDATORY",
+    "status_if_triggered": "FAIL",
+    "applies_to": ["B2B", "B2C_SERVICE", "ECOMMERCE", "OTHER"],
+    "required_facts": ["privacy_policy_text"],
+    "evidence_requirements": ["privacy_policy_text"],
+    "legal_basis": [],
+    "severity": "MEDIUM",
+    "evaluation": {
+      "kind": "SEMANTIC_CRITERION",
+      "criterion": "Determine whether the supplied privacy policy text describes retention periods, storage duration, deletion procedure, or conditions for ending personal-data processing. Return PASS when such retention or deletion handling is described, FAIL when the text is clearly a privacy policy but retention/deletion handling is absent, and MANUAL_CHECK when the text is ambiguous, incomplete, or insufficient.",
+      "evidence_fact_types": ["privacy_policy_text"]
+    },
+    "remediation": "Keep remediation in application logic; this shadow rule does not create user-facing findings.",
+    "confidence_policy": {
+      "fixed_confidence": 0.8
+    },
+    "limitations": ["Shadow-mode semantic pilot only. Does not create production Findings."],
+    "effective_from": "2026-09-10",
+    "last_verified_at": "2026-09-10"
+  },
+  {
+    "rule_id": "PD-016",
+    "version": "0.2-shadow",
+    "title": "Privacy policy describes data-subject request procedure",
+    "pass_summary": "Privacy policy text describes a data-subject request procedure.",
+    "module": "PERSONAL_DATA",
+    "evaluator_type": "LLM_SEMANTIC",
+    "legal_strength": "MANDATORY",
+    "status_if_triggered": "FAIL",
+    "applies_to": ["B2B", "B2C_SERVICE", "ECOMMERCE", "OTHER"],
+    "required_facts": ["privacy_policy_text"],
+    "evidence_requirements": ["privacy_policy_text"],
+    "legal_basis": [],
+    "severity": "MEDIUM",
+    "evaluation": {
+      "kind": "SEMANTIC_CRITERION",
+      "criterion": "Determine whether the supplied privacy policy text describes how a person can submit requests about their personal data, such as access, correction, withdrawal, blocking, or deletion requests. Return PASS when a request procedure or contact path is described, FAIL when the text is clearly a privacy policy but no such request procedure is present, and MANUAL_CHECK when the text is ambiguous, incomplete, or insufficient.",
+      "evidence_fact_types": ["privacy_policy_text"]
+    },
+    "remediation": "Keep remediation in application logic; this shadow rule does not create user-facing findings.",
+    "confidence_policy": {
+      "fixed_confidence": 0.8
+    },
+    "limitations": ["Shadow-mode semantic pilot only. Does not create production Findings."],
+    "effective_from": "2026-09-10",
+    "last_verified_at": "2026-09-10"
+  }
+]

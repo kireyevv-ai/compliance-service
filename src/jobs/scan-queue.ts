@@ -20,6 +20,7 @@ import { runBrowserAudit, type BrowserAuditOptions } from "@/scanner/browser/aud
 import { crawlSite, type CrawlOptions } from "@/scanner/crawl/crawler";
 import type { CrawlResult } from "@/scanner/crawl/types";
 import { sanitizeScanFailureReason } from "@/scanner/url-safety/url-safety";
+import { evaluateSemanticRulesShadow, type SemanticShadowEvaluation } from "@/semantic-evaluator/shadow";
 
 export type StaticExtractionScanResult =
   | {
@@ -29,6 +30,7 @@ export type StaticExtractionScanResult =
       evidenceCount: number;
       browserPagesAttempted: number;
       browserPagesCompleted: number;
+      semanticShadowResults?: SemanticShadowEvaluation[];
     }
   | {
       scan: Scan;
@@ -37,6 +39,7 @@ export type StaticExtractionScanResult =
       evidenceCount: 0;
       browserPagesAttempted: 0;
       browserPagesCompleted: 0;
+      semanticShadowResults?: [];
     };
 
 export async function runNoOpScanLifecycle(
@@ -166,6 +169,11 @@ export async function runClaimedStaticExtractionScan(
       evidence,
       rules: loadRuntimeRules()
     });
+    const semanticShadowResults = await evaluateSemanticRulesShadow({
+      scan,
+      facts,
+      evidence
+    });
 
     for (const evaluation of evaluations) {
       if (evaluation.status === "NO_EVALUATION") {
@@ -181,7 +189,8 @@ export async function runClaimedStaticExtractionScan(
       crawlResult,
       ...persisted,
       browserPagesAttempted: Number(browserCoverageValue?.attempted ?? 0),
-      browserPagesCompleted: Number(browserCoverageValue?.completed ?? 0)
+      browserPagesCompleted: Number(browserCoverageValue?.completed ?? 0),
+      semanticShadowResults
     };
   } catch (error) {
     const failed = await failScan(db, scan.id, sanitizeScanFailureReason(error));
@@ -191,7 +200,8 @@ export async function runClaimedStaticExtractionScan(
       factCount: 0,
       evidenceCount: 0,
       browserPagesAttempted: 0,
-      browserPagesCompleted: 0
+      browserPagesCompleted: 0,
+      semanticShadowResults: []
     };
   }
 }

@@ -3,10 +3,18 @@ import { FINDING_STATUSES, SEVERITIES, SITE_TYPES } from "@/db/schema";
 
 export const EVALUATOR_TYPES = ["DETERMINISTIC", "LLM_SEMANTIC", "OWNER_MANUAL"] as const;
 
-export const ruleEvaluationDefinitionSchema = z.object({
-  kind: z.literal("FACT_PATTERN"),
-  conditions: z.record(z.string(), z.unknown())
-});
+export const ruleEvaluationDefinitionSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("FACT_PATTERN"),
+    conditions: z.record(z.string(), z.unknown())
+  }),
+  z.object({
+    kind: z.literal("SEMANTIC_CRITERION"),
+    criterion: z.string().min(1),
+    evidence_fact_types: z.array(z.string().min(1)).min(1),
+    context: z.record(z.string(), z.unknown()).optional()
+  })
+]);
 
 export const ruleSchema = z.object({
   rule_id: z.string().min(1),

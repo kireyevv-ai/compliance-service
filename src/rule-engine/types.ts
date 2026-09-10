@@ -2,10 +2,17 @@ import type { SiteType, FindingStatus, Severity } from "@/db/schema";
 
 export type EvaluatorType = "DETERMINISTIC" | "LLM_SEMANTIC" | "OWNER_MANUAL";
 
-export interface RuleEvaluationDefinition {
-  kind: "FACT_PATTERN";
-  conditions: Record<string, unknown>;
-}
+export type RuleEvaluationDefinition =
+  | {
+      kind: "FACT_PATTERN";
+      conditions: Record<string, unknown>;
+    }
+  | {
+      kind: "SEMANTIC_CRITERION";
+      criterion: string;
+      evidence_fact_types: string[];
+      context?: Record<string, unknown>;
+    };
 
 export interface Rule {
   ruleId: string;
