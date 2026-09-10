@@ -66,7 +66,7 @@ export async function evaluateSemanticRule(
 
     const allowedRefs = new Set(input.evidence.map((item) => item.ref));
     if (validation.data.evidence_refs.some((ref) => !allowedRefs.has(ref))) {
-      const result = noEvaluation("Semantic provider referenced evidence outside the supplied package.", "SCHEMA_VALIDATION_FAILED");
+      const result = noEvaluation("Semantic provider referenced evidence outside the supplied package.", "EVIDENCE_REF_MISMATCH");
       emitDiagnostic(options, input.ruleId, startedAt, "invalid_response", result);
       return result;
     }

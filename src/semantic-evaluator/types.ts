@@ -9,6 +9,7 @@ export type SemanticTechnicalErrorCode =
   | "PROVIDER_ERROR"
   | "MALFORMED_PROVIDER_RESPONSE"
   | "SCHEMA_VALIDATION_FAILED"
+  | "EVIDENCE_REF_MISMATCH"
   | "INPUT_TOO_LARGE";
 
 export interface SemanticEvidenceExcerpt {

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { SemanticModelProvider, SemanticModelRequest } from "../types";
+import type { SemanticEvidenceExcerpt, SemanticModelProvider, SemanticModelRequest } from "../types";
 
 type Fetch = typeof fetch;
 
@@ -32,35 +32,6 @@ const DEFAULT_TIMEOUT_MS = 15_000;
 const DEFAULT_MAX_RETRIES = 1;
 const TOKEN_REFRESH_SKEW_MS = 60_000;
 
-const semanticResponseSchema = {
-  type: "object",
-  properties: {
-    status: {
-      type: "string",
-      enum: ["PASS", "FAIL", "MANUAL_CHECK"]
-    },
-    confidence: {
-      type: "number",
-      minimum: 0,
-      maximum: 1
-    },
-    reason_code: {
-      type: "string"
-    },
-    reason: {
-      type: "string"
-    },
-    evidence_refs: {
-      type: "array",
-      items: {
-        type: "string"
-      }
-    }
-  },
-  required: ["status", "confidence", "reason_code", "reason", "evidence_refs"],
-  additionalProperties: false
-};
-
 export class GigaChatSemanticModelProvider implements SemanticModelProvider {
   private readonly authKey: string;
   private readonly scope: string;
@@ -85,7 +56,9 @@ export class GigaChatSemanticModelProvider implements SemanticModelProvider {
     this.model = options.model ?? process.env.GIGACHAT_MODEL;
     this.apiBaseUrl = trimTrailingSlash(options.apiBaseUrl ?? process.env.GIGACHAT_API_BASE_URL ?? DEFAULT_API_BASE_URL);
     this.oauthUrl = options.oauthUrl ?? process.env.GIGACHAT_OAUTH_URL ?? DEFAULT_OAUTH_URL;
-    this.timeoutMs = options.timeoutMs ?? numberFromEnv("GIGACHAT_TIMEOUT_MS", DEFAULT_TIMEOUT_MS);
+    this.timeoutMs =
+      options.timeoutMs ??
+      numberFromEnv("SEMANTIC_LLM_TIMEOUT_MS", numberFromEnv("GIGACHAT_TIMEOUT_MS", DEFAULT_TIMEOUT_MS));
     this.maxRetries = options.maxRetries ?? numberFromEnv("GIGACHAT_MAX_RETRIES", DEFAULT_MAX_RETRIES);
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.now = options.now ?? Date.now;
@@ -97,6 +70,7 @@ export class GigaChatSemanticModelProvider implements SemanticModelProvider {
       throw new Error("GIGACHAT_MODEL is required for semantic evaluation");
     }
 
+    const aliased = aliasEvidenceRefs(request);
     const response = await this.fetchJsonWithRetries(`${this.apiBaseUrl}/v1/chat/completions`, {
       method: "POST",
       headers: {
@@ -106,16 +80,16 @@ export class GigaChatSemanticModelProvider implements SemanticModelProvider {
       },
       body: JSON.stringify({
         model: this.model,
-        messages: toMessages(request),
+        messages: toMessages(aliased.request),
         response_format: {
           type: "json_schema",
-          schema: semanticResponseSchema,
+          schema: semanticResponseSchema(aliased.aliases),
           strict: true
         }
       })
     });
 
-    return parseChatCompletionContent(response);
+    return parseChatCompletionContent(response, aliased.aliasToRef);
   }
 
   async listModels(): Promise<GigaChatModel[]> {
@@ -200,6 +174,54 @@ class GigaChatProviderError extends Error {
   }
 }
 
+function aliasEvidenceRefs(request: SemanticModelRequest): {
+  request: SemanticModelRequest;
+  aliases: string[];
+  aliasToRef: Map<string, string>;
+} {
+  const aliasToRef = new Map<string, string>();
+  const evidence = request.evidence.map((item, index): SemanticEvidenceExcerpt => {
+    const alias = `E${index + 1}`;
+    aliasToRef.set(alias, item.ref);
+    return { ...item, ref: alias };
+  });
+
+  return {
+    request: { ...request, evidence },
+    aliases: evidence.map((item) => item.ref),
+    aliasToRef
+  };
+}
+
+function semanticResponseSchema(aliases: string[]) {
+  return {
+    type: "object",
+    properties: {
+      status: {
+        type: "string",
+        enum: ["PASS", "FAIL", "MANUAL_CHECK"]
+      },
+      confidence: {
+        type: "number",
+        minimum: 0,
+        maximum: 1
+      },
+      reason_code: {
+        type: "string"
+      },
+      reason: {
+        type: "string"
+      },
+      evidence_refs: {
+        type: "array",
+        items: aliases.length > 0 ? { type: "string", enum: aliases } : { type: "string" }
+      }
+    },
+    required: ["status", "confidence", "reason_code", "reason", "evidence_refs"],
+    additionalProperties: false
+  };
+}
+
 function toMessages(request: SemanticModelRequest) {
   return [
     {
@@ -253,17 +275,38 @@ function parseModelsResponse(response: unknown): GigaChatModel[] {
     .filter((item): item is GigaChatModel => Boolean(item));
 }
 
-function parseChatCompletionContent(response: unknown): unknown {
+function parseChatCompletionContent(response: unknown, aliasToRef: Map<string, string>): unknown {
   const content = readChatCompletionContent(response);
   if (!content) {
     throw new GigaChatProviderError();
   }
 
   try {
-    return JSON.parse(content);
+    return mapEvidenceAliases(JSON.parse(content), aliasToRef);
   } catch {
     return content;
   }
+}
+
+function mapEvidenceAliases(parsed: unknown, aliasToRef: Map<string, string>): unknown {
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return parsed;
+  }
+
+  const object = parsed as Record<string, unknown>;
+  if (!Array.isArray(object.evidence_refs)) {
+    return parsed;
+  }
+
+  return {
+    ...object,
+    evidence_refs: object.evidence_refs.map((ref) => {
+      if (typeof ref !== "string") {
+        return ref;
+      }
+      return aliasToRef.get(ref) ?? `__UNKNOWN_EVIDENCE_ALIAS__:${ref}`;
+    })
+  };
 }
 
 function readChatCompletionContent(response: unknown): string | undefined {

@@ -79,7 +79,23 @@ describe("generic semantic evaluator", () => {
     });
   });
 
-  it("rejects invented evidence refs", async () => {
+  it("turns malformed structured objects into SCHEMA_VALIDATION_FAILED", async () => {
+    const result = await evaluateSemanticRule(input, {
+      provider: new FakeSemanticModelProvider({
+        status: "PASS",
+        confidence: 0.8,
+        reason: "Missing reason_code.",
+        evidence_refs: ["ev:consent-text:1"]
+      })
+    });
+
+    expect(result).toMatchObject({
+      status: "NO_EVALUATION",
+      technicalErrorCode: "SCHEMA_VALIDATION_FAILED"
+    });
+  });
+
+  it("separates structurally valid responses with invented evidence refs from schema failures", async () => {
     const result = await evaluateSemanticRule(input, {
       provider: new FakeSemanticModelProvider({
         ...response("PASS"),
@@ -89,7 +105,7 @@ describe("generic semantic evaluator", () => {
 
     expect(result).toMatchObject({
       status: "NO_EVALUATION",
-      technicalErrorCode: "SCHEMA_VALIDATION_FAILED"
+      technicalErrorCode: "EVIDENCE_REF_MISMATCH"
     });
   });
 
