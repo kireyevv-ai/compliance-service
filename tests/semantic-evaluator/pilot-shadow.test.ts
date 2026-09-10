@@ -5,7 +5,10 @@ import type { Fact } from "@/facts/types";
 import { loadPilotSemanticRuntimeRules, loadRuntimeRules } from "@/legal-rules/runtime";
 import { evaluateRulesForScan } from "@/rule-engine/evaluator";
 import { FakeSemanticModelProvider } from "@/semantic-evaluator/fake-provider";
-import { evaluateSemanticRulesShadow } from "@/semantic-evaluator/shadow";
+import {
+  evaluateSemanticRulesShadow,
+  SEMANTIC_SHADOW_TOTAL_EVIDENCE_TEXT_LIMIT
+} from "@/semantic-evaluator/shadow";
 import type { SemanticModelRequest } from "@/semantic-evaluator/types";
 
 const pilotRuleIds = ["PD-008", "PD-013", "PD-014", "PD-015", "PD-016"] as const;
@@ -82,6 +85,44 @@ function semanticFixture(ruleId: (typeof pilotRuleIds)[number], marker: "GOLDEN_
       sourceUrl: "https://example.test/privacy",
       truncated: false,
       originalTextLength: text.length,
+      maxChars: 50_000
+    },
+    createdAt: new Date("2026-09-10T00:00:00.000Z")
+  };
+
+  return { fact, evidence };
+}
+
+function policyFixtureWithText(id: string, text: string, sourceUrl = "https://example.test/privacy?token=secret#section") {
+  const fact: Fact = {
+    id: `fact-policy-${id}`,
+    scanId: scan.id,
+    pageUrl: sourceUrl,
+    factType: "privacy_policy_text",
+    value: {
+      text,
+      sourceUrl,
+      truncated: false,
+      originalTextLength: text.length,
+      textLength: text.length,
+      maxChars: 50_000
+    },
+    createdAt: new Date("2026-09-10T00:00:00.000Z")
+  };
+  const evidence: Evidence = {
+    id: `evidence-policy-${id}`,
+    scanId: scan.id,
+    factId: fact.id,
+    evidenceType: "TEXT_FRAGMENT",
+    pageUrl: sourceUrl,
+    payload: {
+      kind: "privacy_policy_text",
+      text,
+      context: text,
+      sourceUrl,
+      truncated: false,
+      originalTextLength: text.length,
+      textLength: text.length,
       maxChars: 50_000
     },
     createdAt: new Date("2026-09-10T00:00:00.000Z")
@@ -193,6 +234,97 @@ describe("pilot semantic rules shadow mode", () => {
         reasonCode: "TRUNCATED_POLICY_REQUIRES_MANUAL_CHECK"
       })
     });
+  });
+
+  it("passes policy text to the provider only through evidence excerpts", async () => {
+    const marker = "UNIQUE_POLICY_RAW_TEXT_MARKER";
+    const provider = goldenProvider();
+    const { fact, evidence } = policyFixtureWithText("single-raw", `GOLDEN_PASS ${marker}`);
+
+    await evaluateSemanticRulesShadow({
+      scan,
+      facts: [fact],
+      evidence: [evidence],
+      rules: ruleOnly("PD-013"),
+      provider
+    });
+
+    const requestJson = JSON.stringify(provider.requests[0]);
+    expect(provider.requests[0].evidence[0].excerpt).toContain(marker);
+    expect(provider.requests[0].facts?.[0].value).not.toHaveProperty("text");
+    expect(provider.requests[0].facts?.[0].value).not.toHaveProperty("context");
+    expect((requestJson.match(new RegExp(marker, "g")) ?? [])).toHaveLength(1);
+  });
+
+  it("removes query strings and fragments from model-facing source URLs", async () => {
+    const provider = goldenProvider();
+    const { fact, evidence } = policyFixtureWithText(
+      "sanitized-url",
+      "GOLDEN_PASS policy text",
+      "https://example.test/privacy/path?email=user@example.test&token=secret#consent"
+    );
+
+    await evaluateSemanticRulesShadow({
+      scan,
+      facts: [fact],
+      evidence: [evidence],
+      rules: ruleOnly("PD-013"),
+      provider
+    });
+
+    expect(provider.requests[0].evidence[0]).toMatchObject({
+      pageUrl: "https://example.test/privacy/path",
+      metadata: expect.objectContaining({
+        sourceUrl: "https://example.test/privacy/path"
+      })
+    });
+    expect(provider.requests[0].facts?.[0]).toMatchObject({
+      pageUrl: "https://example.test/privacy/path",
+      value: expect.objectContaining({
+        sourceUrl: "https://example.test/privacy/path"
+      })
+    });
+    expect(JSON.stringify(provider.requests[0])).not.toContain("token=secret");
+    expect(JSON.stringify(provider.requests[0])).not.toContain("#consent");
+  });
+
+  it("evaluates semantic shadow requests below the total evidence text cap", async () => {
+    const provider = goldenProvider();
+    const text = `GOLDEN_PASS ${"а".repeat(SEMANTIC_SHADOW_TOTAL_EVIDENCE_TEXT_LIMIT - 100)}`;
+    const { fact, evidence } = policyFixtureWithText("under-cap", text);
+
+    const [result] = await evaluateSemanticRulesShadow({
+      scan,
+      facts: [fact],
+      evidence: [evidence],
+      rules: ruleOnly("PD-013"),
+      provider
+    });
+
+    expect(result.status).toBe("PASS");
+    expect(provider.requests).toHaveLength(1);
+  });
+
+  it("returns NO_EVALUATION/INPUT_TOO_LARGE and does not call provider when semantic evidence exceeds the total cap", async () => {
+    const provider = goldenProvider();
+    const first = policyFixtureWithText("over-cap-a", `GOLDEN_PASS ${"а".repeat(31_000)}`);
+    const second = policyFixtureWithText("over-cap-b", `GOLDEN_PASS ${"б".repeat(31_000)}`);
+
+    const [result] = await evaluateSemanticRulesShadow({
+      scan,
+      facts: [first.fact, second.fact],
+      evidence: [first.evidence, second.evidence],
+      rules: ruleOnly("PD-013"),
+      provider
+    });
+
+    expect(result).toMatchObject({
+      status: "NO_EVALUATION",
+      result: expect.objectContaining({
+        technicalErrorCode: "INPUT_TOO_LARGE"
+      })
+    });
+    expect(provider.requests).toHaveLength(0);
   });
 
   it("keeps deterministic evaluation separate from semantic shadow mode", async () => {

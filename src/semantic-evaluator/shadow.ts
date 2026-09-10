@@ -10,7 +10,8 @@ import type {
   SemanticEvaluationInput,
   SemanticEvaluationResult,
   SemanticEvidenceExcerpt,
-  SemanticModelProvider
+  SemanticModelProvider,
+  SemanticTechnicalErrorCode
 } from "./types";
 
 export interface SemanticShadowEvaluation {
@@ -39,6 +40,8 @@ const defaultShadowProvider = new FakeSemanticModelProvider({
   reason: "Fake shadow provider does not make semantic conclusions.",
   evidence_refs: []
 });
+
+export const SEMANTIC_SHADOW_TOTAL_EVIDENCE_TEXT_LIMIT = 60_000;
 
 export async function evaluateSemanticRulesShadow(
   input: EvaluateSemanticShadowRulesInput
@@ -69,6 +72,17 @@ export async function evaluateSemanticRulesShadow(
       continue;
     }
 
+    if (totalEvidenceTextLength(evidencePackage) > SEMANTIC_SHADOW_TOTAL_EVIDENCE_TEXT_LIMIT) {
+      results.push(
+        noShadowEvaluation(
+          rule,
+          `Semantic evidence package exceeds total text limit of ${SEMANTIC_SHADOW_TOTAL_EVIDENCE_TEXT_LIMIT} chars.`,
+          "INPUT_TOO_LARGE"
+        )
+      );
+      continue;
+    }
+
     const semanticInput: SemanticEvaluationInput = {
       ruleId: rule.ruleId,
       ruleVersion: rule.version,
@@ -76,7 +90,12 @@ export async function evaluateSemanticRulesShadow(
       evidence: evidencePackage,
       facts: input.facts
         .filter((fact) => evaluation.evidence_fact_types.includes(fact.factType))
-        .map((fact) => ({ id: fact.id, factType: fact.factType, pageUrl: fact.pageUrl, value: fact.value })),
+        .map((fact) => ({
+          id: fact.id,
+          factType: fact.factType,
+          pageUrl: sanitizeUrlForModel(fact.pageUrl),
+          value: modelFacingFactValue(fact)
+        })),
       context: {
         siteType: input.scan.siteType,
         ...(evaluation.context ?? {})
@@ -131,7 +150,7 @@ function buildEvidencePackage(facts: Fact[], evidence: Evidence[], factTypes: st
       ref,
       evidenceId: item.id,
       evidenceType: item.evidenceType,
-      pageUrl: item.pageUrl || fact.pageUrl,
+      pageUrl: sanitizeUrlForModel(item.pageUrl || fact.pageUrl),
       excerpt,
       metadata: evidenceMetadata(item, fact)
     });
@@ -152,11 +171,44 @@ function evidenceMetadata(evidence: Evidence, fact: Fact): Record<string, unknow
   const payload = evidence.payload ?? {};
   return {
     factType: fact.factType,
-    sourceUrl: typeof payload.sourceUrl === "string" ? payload.sourceUrl : evidence.pageUrl || fact.pageUrl,
+    sourceUrl: sanitizeUrlForModel(typeof payload.sourceUrl === "string" ? payload.sourceUrl : evidence.pageUrl || fact.pageUrl),
     truncated: payload.truncated === true || fact.value.truncated === true,
     originalTextLength: payload.originalTextLength ?? fact.value.originalTextLength,
     maxChars: payload.maxChars ?? fact.value.maxChars
   };
+}
+
+function totalEvidenceTextLength(evidencePackage: SemanticEvidenceExcerpt[]): number {
+  return evidencePackage.reduce((total, item) => total + item.excerpt.length, 0);
+}
+
+function modelFacingFactValue(fact: Fact): Record<string, unknown> {
+  return {
+    formIndex: fact.value.formIndex,
+    controlIndex: fact.value.controlIndex,
+    sourceUrl: sanitizeUrlForModel(asString(fact.value.sourceUrl)),
+    truncated: fact.value.truncated,
+    originalTextLength: fact.value.originalTextLength,
+    textLength: fact.value.textLength,
+    maxChars: fact.value.maxChars
+  };
+}
+
+function sanitizeUrlForModel(rawUrl: string | undefined): string | undefined {
+  if (!rawUrl) {
+    return undefined;
+  }
+
+  try {
+    const url = new URL(rawUrl);
+    return `${url.origin}${url.pathname}`;
+  } catch {
+    return undefined;
+  }
+}
+
+function asString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
 }
 
 function guardTruncatedPolicyFail(
@@ -181,11 +233,15 @@ function isTruncatedPolicyEvidence(item: SemanticEvidenceExcerpt): boolean {
   return item.metadata?.factType === "privacy_policy_text" && item.metadata.truncated === true;
 }
 
-function noShadowEvaluation(rule: Rule, reason: string): SemanticShadowEvaluation {
+function noShadowEvaluation(
+  rule: Rule,
+  reason: string,
+  technicalErrorCode: SemanticTechnicalErrorCode = "SCHEMA_VALIDATION_FAILED"
+): SemanticShadowEvaluation {
   const result: SemanticEvaluationResult = {
     status: "NO_EVALUATION",
     reason,
-    technicalErrorCode: "SCHEMA_VALIDATION_FAILED"
+    technicalErrorCode
   };
   return {
     ruleId: rule.ruleId,

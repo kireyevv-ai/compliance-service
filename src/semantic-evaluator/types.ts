@@ -8,7 +8,8 @@ export type SemanticTechnicalErrorCode =
   | "PROVIDER_TIMEOUT"
   | "PROVIDER_ERROR"
   | "MALFORMED_PROVIDER_RESPONSE"
-  | "SCHEMA_VALIDATION_FAILED";
+  | "SCHEMA_VALIDATION_FAILED"
+  | "INPUT_TOO_LARGE";
 
 export interface SemanticEvidenceExcerpt {
   ref: string;
