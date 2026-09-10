@@ -1,0 +1,173 @@
+catalog:
+  name: Static Fact Catalog v0.1
+  purpose: Минимальный набор Facts для Task 004. Не включает Playwright, semantic document analysis, owner context или legal
+    conclusions.
+  count: 32
+  rules:
+  - Facts describe observations, not legal violations.
+  - Absence facts require scan coverage context; do not infer site-wide absence from one page.
+  - Personal values are masked/minimized where possible.
+  - Static checked state is provisional until Playwright confirms actual rendered state.
+  - Candidates (name/address/FIO etc.) must retain evidence snippet and confidence; Rule Engine decides whether evidence is
+    sufficient.
+facts:
+- fact_type: form_found
+  scope: PAGE
+  source: H
+  definition: Есть HTML-форма или эквивалентный form-like container в static DOM.
+  used_by: PD-001, PD-003, PD-007
+- fact_type: form_fields
+  scope: PAGE
+  source: H
+  definition: 'Список полей: type/name/label/required/autocomplete; значения ПД не сохранять.'
+  used_by: PD-001, PD-017, PD-024
+- fact_type: personal_data_collection_found
+  scope: PAGE
+  source: H
+  definition: Форма содержит поля, похожие на имя/e-mail/телефон/адрес/идентификаторы.
+  used_by: PD-001, PD-003, PD-007, PD-020, PD-022
+- fact_type: consent_control_found
+  scope: PAGE
+  source: H
+  definition: Checkbox/radio/control рядом с формой с consent-like текстом.
+  used_by: PD-005
+- fact_type: pd_consent_control_found
+  scope: PAGE
+  source: H
+  definition: Consent control связан именно с обработкой ПД.
+  used_by: PD-006
+- fact_type: control_prechecked_static
+  scope: PAGE
+  source: H
+  definition: В raw HTML присутствует checked/selected state. Не считать финальным без Playwright.
+  used_by: PD-006, PD-011
+- fact_type: consent_text
+  scope: PAGE
+  source: H
+  definition: Текст и ссылки, ассоциированные с consent control.
+  used_by: PD-005, PD-008, PD-009, PD-010
+- fact_type: marketing_consent_control_found
+  scope: PAGE
+  source: H
+  definition: Control содержит маркетинговые/рекламные признаки.
+  used_by: PD-010, PD-011
+- fact_type: marketing_subscription_detected
+  scope: PAGE
+  source: H
+  definition: Форма/CTA явно предлагает подписку/рассылку.
+  used_by: PD-012, ADV-004
+- fact_type: privacy_policy_link_found
+  scope: PAGE/SITE
+  source: H
+  definition: Ссылка на документ, классифицированный как policy по anchor/href/title.
+  used_by: PD-001, PD-002, PD-003
+- fact_type: privacy_policy_url
+  scope: SITE
+  source: H
+  definition: Нормализованный URL найденной policy.
+  used_by: PD-002, PD-004
+- fact_type: policy_access_from_collection_page
+  scope: PAGE
+  source: H
+  definition: На странице формы есть прямая/глобальная доступная ссылка на policy.
+  used_by: PD-003
+- fact_type: offer_link_found
+  scope: PAGE/SITE
+  source: H
+  definition: Ссылка, похожая на оферту/условия дистанционной продажи.
+  used_by: EC-001, EC-002
+- fact_type: offer_url
+  scope: SITE
+  source: H
+  definition: Нормализованный URL оферты.
+  used_by: EC-002
+- fact_type: document_links
+  scope: PAGE/SITE
+  source: H
+  definition: PDF/DOC/DOCX и юридические HTML documents; содержимое не парсить на T4.
+  used_by: PD/EC/REC later
+- fact_type: seller_legal_name_candidate
+  scope: SITE
+  source: H
+  definition: Кандидат полного наименования юрлица + evidence snippet.
+  used_by: EC-003, CON-001
+- fact_type: ogrn_candidate
+  scope: SITE
+  source: H
+  definition: 13-значный ОГРН-кандидат с контекстом.
+  used_by: EC-004
+- fact_type: ogrnip_candidate
+  scope: SITE
+  source: H
+  definition: 15-значный ОГРНИП-кандидат с контекстом.
+  used_by: EC-008, CON-002
+- fact_type: seller_fio_candidate
+  scope: SITE
+  source: H
+  definition: ФИО рядом с маркерами ИП/продавца; не пытаться универсально извлекать все имена.
+  used_by: EC-007
+- fact_type: seller_address_candidate
+  scope: SITE
+  source: H
+  definition: Адрес рядом с реквизитами/контактами.
+  used_by: EC-005, CON-001
+- fact_type: seller_email_found
+  scope: SITE
+  source: H
+  definition: Наличие e-mail продавца/организации; хранить masked value + evidence.
+  used_by: EC-006, EC-009
+- fact_type: seller_phone_found
+  scope: SITE
+  source: H
+  definition: Наличие телефона продавца/организации; хранить masked value + evidence.
+  used_by: EC-006, EC-009
+- fact_type: working_hours_candidate
+  scope: SITE
+  source: H
+  definition: Режим работы рядом с контактами/реквизитами.
+  used_by: CON-001
+- fact_type: price_occurrence
+  scope: PAGE
+  source: H
+  definition: Цена + валюта + текстовый контекст; не классифицировать как consumer offer без context.
+  used_by: EC-013
+- fact_type: ruble_price_found
+  scope: PAGE
+  source: H
+  definition: Цена содержит ₽/руб/RUB в релевантном ценовом фрагменте.
+  used_by: EC-013
+- fact_type: form_action_target
+  scope: PAGE
+  source: H
+  definition: action URL/domain формы без отправки формы.
+  used_by: PD-021
+- fact_type: auth_ui_static_signal
+  scope: PAGE
+  source: H
+  definition: Login/register form/link/provider buttons из static HTML.
+  used_by: AUTH-001
+- fact_type: recommendation_notice_candidate
+  scope: SITE
+  source: H
+  definition: Ссылка/текст с явными словами о рекомендательных технологиях.
+  used_by: REC-001
+- fact_type: recommendation_rules_document_link
+  scope: SITE
+  source: H
+  definition: Ссылка на правила применения рекомендательных технологий.
+  used_by: REC-002, REC-003
+- fact_type: ad_label_text_found
+  scope: PAGE
+  source: H
+  definition: Буквальная пометка 'реклама' около блока. Не квалифицирует блок как рекламу.
+  used_by: ADV-001
+- fact_type: erid_token_candidate
+  scope: PAGE
+  source: H
+  definition: ERID-like token в URL/text/markup; только технический факт.
+  used_by: ADV-003
+- fact_type: page_language_signal
+  scope: PAGE
+  source: H
+  definition: Простой language signal (html lang + text heuristic), без юридической квалификации.
+  used_by: LANG-001, LANG-002

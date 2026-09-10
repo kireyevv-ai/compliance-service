@@ -1,0 +1,24 @@
+# Closed Beta Checklist
+
+- Staging URL opens from the public internet.
+- HTTPS is enabled.
+- PostgreSQL runs in Russian infrastructure.
+- `.env` exists on VPS and is not committed.
+- `.env.local` and other local secret files are ignored.
+- Chromium works through `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`.
+- Web process runs under systemd.
+- Worker process runs under systemd.
+- Worker logs show scan claim/status transitions.
+- `/api/health` returns a safe status.
+- Beta access password gate works.
+- Incorrect beta password is rejected.
+- Rate limit blocks extra active scans for the beta user.
+- A known scan completes.
+- Scan failure shows a safe user-facing message.
+- Results page reopens after completion.
+- No secrets appear in API responses, UI, or logs.
+- Reboot restarts web and worker.
+- Backups are planned or enabled with `pg_dump`.
+- Backups remain in Russian infrastructure.
+- 5 known validation sites from `REAL_SITE_VALIDATION_V0_1.md` still behave acceptably.
+- Legal disclaimer remains visible in results.

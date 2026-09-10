@@ -1,0 +1,150 @@
+catalog:
+  name: Browser Fact Catalog v0.1
+  date: '2026-09-06'
+  count: 17
+  purpose: Минимальный browser-layer facts catalog для Playwright этапа.
+  principles:
+  - Browser facts are observations, not legal conclusions.
+  - No form submission, clicks, login, purchase, or cookie-banner acceptance.
+  - Do not store cookie/localStorage/sessionStorage values.
+  - Network capture stores minimal request metadata/hostnames; no request/response bodies by default.
+  - Playwright should run only on selected pages, not blindly on every crawled page.
+  page_selection:
+    max_browser_pages: 10
+    priority:
+    - homepage
+    - pages_with_forms_or_personal_data_signals
+    - pages_with_consent_or_marketing_signals
+    - auth/login pages
+    - checkout/order/cart-like pages
+    fallback: Do not fill unused capacity merely to reach 10 pages.
+facts:
+- fact_type: rendered_form_found
+  scope: PAGE
+  source: PLAYWRIGHT_DOM
+  definition: После выполнения JS в DOM присутствует форма или form-like container, которого могло не быть в raw HTML.
+  used_by:
+  - PD-001
+  - PD-003
+  - PD-007
+  - PD-020
+  - PD-022
+- fact_type: rendered_personal_data_collection_found
+  scope: PAGE
+  source: PLAYWRIGHT_DOM
+  definition: 'Rendered form содержит очевидные поля ПД: имя/e-mail/телефон/адрес/date-of-birth where obvious.'
+  used_by:
+  - PD-001
+  - PD-003
+  - PD-007
+  - PD-020
+  - PD-022
+- fact_type: rendered_consent_control_found
+  scope: PAGE
+  source: PLAYWRIGHT_DOM
+  definition: В rendered DOM найден control, ассоциированный с согласием на обработку ПД.
+  used_by:
+  - PD-005
+  - PD-006
+  - PD-007
+- fact_type: rendered_consent_checked
+  scope: PAGE
+  source: PLAYWRIGHT_STATE
+  definition: Фактическое состояние consent control после загрузки страницы, без кликов пользователя.
+  used_by:
+  - PD-006
+- fact_type: rendered_consent_text
+  scope: PAGE
+  source: PLAYWRIGHT_DOM
+  definition: Текст и ссылки, фактически связанные с consent control в rendered DOM.
+  used_by:
+  - PD-005
+  - PD-008
+  - PD-009
+  - PD-010
+- fact_type: rendered_marketing_consent_found
+  scope: PAGE
+  source: PLAYWRIGHT_DOM
+  definition: В rendered DOM найден control маркетингового или рекламного согласия.
+  used_by:
+  - PD-010
+  - PD-011
+  - PD-012
+  - ADV-004
+- fact_type: rendered_marketing_consent_checked
+  scope: PAGE
+  source: PLAYWRIGHT_STATE
+  definition: Фактическое checked state marketing consent без взаимодействия пользователя.
+  used_by:
+  - PD-011
+- fact_type: rendered_form_action_target
+  scope: PAGE
+  source: PLAYWRIGHT_DOM
+  definition: Фактический action/target формы после JS-инициализации, если его можно определить без отправки формы.
+  used_by:
+  - PD-021
+- fact_type: network_request_hosts
+  scope: PAGE
+  source: PLAYWRIGHT_NETWORK
+  definition: Уникальные hostnames сетевых запросов при обычной загрузке страницы без взаимодействий.
+  used_by:
+  - PD-018
+  - PD-019
+  - PD-020
+  - PD-021
+- fact_type: script_sources_rendered
+  scope: PAGE
+  source: PLAYWRIGHT_DOM
+  definition: Script src URLs, присутствующие в rendered DOM.
+  used_by:
+  - PD-018
+  - PD-019
+  - PD-020
+  - PD-021
+- fact_type: iframe_sources_rendered
+  scope: PAGE
+  source: PLAYWRIGHT_DOM
+  definition: Iframe src URLs, присутствующие в rendered DOM.
+  used_by:
+  - PD-018
+  - PD-019
+  - PD-020
+  - PD-021
+- fact_type: cookie_metadata
+  scope: PAGE
+  source: PLAYWRIGHT_BROWSER_CONTEXT
+  definition: Только имена cookies и минимальные технические атрибуты; значения cookies не сохранять.
+  used_by:
+  - future_cookie_checks
+  - external_service_context
+- fact_type: local_storage_keys
+  scope: PAGE
+  source: PLAYWRIGHT_STORAGE
+  definition: Только имена ключей localStorage без values.
+  used_by:
+  - external_service_context
+- fact_type: session_storage_keys
+  scope: PAGE
+  source: PLAYWRIGHT_STORAGE
+  definition: Только имена ключей sessionStorage без values.
+  used_by:
+  - external_service_context
+- fact_type: auth_provider_candidates_rendered
+  scope: PAGE
+  source: PLAYWRIGHT_DOM
+  definition: Кандидаты кнопок/ссылок способов авторизации в rendered UI; юридическую допустимость не определять.
+  used_by:
+  - AUTH-001
+- fact_type: paid_addon_control_found
+  scope: PAGE
+  source: PLAYWRIGHT_DOM
+  definition: На checkout/order-like странице найден control платной дополнительной позиции/услуги.
+  used_by:
+  - EC-011
+  - EC-012
+- fact_type: paid_addon_preselected
+  scope: PAGE
+  source: PLAYWRIGHT_STATE
+  definition: Фактическое состояние платного add-on control при первоначальной загрузке, без взаимодействия.
+  used_by:
+  - EC-011

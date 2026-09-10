@@ -1,0 +1,28 @@
+{
+  "rule_id": "TEST_SYNTHETIC_FORM_FACT_PRESENT",
+  "version": "0.0.0-test",
+  "title": "Synthetic test rule for validating rule file structure",
+  "pass_summary": "Synthetic test fact is present.",
+  "module": "synthetic",
+  "applies_to": ["B2B", "B2C_SERVICE", "ECOMMERCE", "OTHER"],
+  "required_facts": ["synthetic_fact_found"],
+  "legal_basis": [],
+  "severity": "LOW",
+  "evaluation": {
+    "kind": "FACT_PATTERN",
+    "conditions": {
+      "fact_type": "synthetic_fact_found"
+    }
+  },
+  "remediation": "This is test data only and must not be shown as legal guidance.",
+  "confidence_policy": {
+    "fixed_confidence": 1
+  },
+  "limitations": [
+    "Synthetic example only. Not a legal rule."
+  ],
+  "effective_from": "2026-09-06",
+  "last_verified_at": "2026-09-06",
+  "test_only": true,
+  "expected_status_for_test": "PASS"
+}

@@ -1,0 +1,54 @@
+spec:
+  name: External Service Detection Spec v0.1
+  date: '2026-09-06'
+  purpose: Детерминированное сопоставление уже собранных script/iframe/network/form-action observations с versioned External
+    Services Catalog.
+  principles:
+  - Service detection is a technical observation, not a legal conclusion.
+  - Only catalog entries with enabled=true participate in runtime matching.
+  - CANDIDATE entries must remain disabled until separately verified.
+  - Foreign provider or host MUST NOT automatically produce a localization/cross-border FAIL.
+  - Prefer exact host/path/signature matching over broad parent-domain matching.
+  - Never store sensitive query values, request/response bodies, headers, cookie values, or form contents.
+  - Deduplicate repeated matches for the same service/page/signal while preserving strongest evidence.
+  matching_order:
+  - Exact hostname + required path/signature hint
+  - Exact hostname
+  - Safe subdomain suffix match only when catalog entry explicitly allows it
+  - Do not match broad provider domains without path/signature constraints
+  confidence_rules:
+    HIGH: Exact/current catalog signature sufficient by itself.
+    MEDIUM: Catalog permits match but signal is broader/less specific; keep evidence.
+    NONE: No enabled catalog signature matched; no service fact.
+  negative_rules:
+  - google.com alone must not imply reCAPTCHA
+  - vk.com alone must not imply VK widget/pixel unless an enabled signature exists
+  - youtube.com generic links must not imply embedded player
+  - foreign host alone must not imply unlawful transfer
+facts:
+- fact_type: external_service_matches
+  scope: PAGE
+  source: STATIC_OR_BROWSER_OBSERVATIONS
+  definition: Список детерминированных совпадений с ENABLED entries External Services Catalog.
+  value_shape:
+    service_id: string
+    service_name: string
+    category: string
+    matched_host: string
+    signal_type: SCRIPT|IFRAME|NETWORK|FORM_ACTION|LINK
+    matched_pattern: string
+    confidence: HIGH|MEDIUM
+    provider_scope: catalog descriptive value
+- fact_type: external_service_detected
+  scope: SITE
+  source: AGGREGATION
+  definition: 'Scan-level boolean/summary: хотя бы один ENABLED external service match найден.'
+- fact_type: foreign_provider_signal_found
+  scope: SITE
+  source: AGGREGATION
+  definition: Есть match каталога с provider_scope=FOREIGN_PROVIDER. Это только технический сигнал, не юридический вывод.
+- fact_type: external_service_hosts_unmatched
+  scope: PAGE
+  source: STATIC_OR_BROWSER_OBSERVATIONS
+  definition: Ограниченный список other-host observations, которые не совпали с ENABLED catalog entries. Используется для
+    будущего расширения каталога, не для Findings.

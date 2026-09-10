@@ -1,0 +1,22 @@
+[
+  {
+    "service_id": "synthetic-analytics",
+    "name": "Synthetic Analytics",
+    "domains": ["analytics.synthetic.test"],
+    "category": "analytics",
+    "provider": "Synthetic Provider",
+    "jurisdiction_notes": "Synthetic example only.",
+    "data_notes": "Synthetic example only; not a real external service.",
+    "test_only": true
+  },
+  {
+    "service_id": "synthetic-widget",
+    "name": "Synthetic Widget",
+    "domains": ["widget.synthetic.test"],
+    "category": "widgets",
+    "provider": "Synthetic Provider",
+    "jurisdiction_notes": "Synthetic example only.",
+    "data_notes": "Synthetic example only; not a real external service.",
+    "test_only": true
+  }
+]

@@ -1,0 +1,443 @@
+catalog:
+  name: External Services Catalog v0.1
+  date: '2026-09-06'
+  entries: 38
+  enabled_entries: 15
+  principles:
+  - Detection of a service is a technical fact, not a legal verdict.
+  - provider_scope is descriptive only and MUST NOT be treated as data-residency evidence.
+  - Foreign provider/endpoint MUST NOT automatically produce a localization or cross-border FAIL.
+  - Entries with confidence=CANDIDATE remain disabled until current official integration signatures are verified.
+  - Prefer path/script/signature matching over broad top-level-domain matching.
+  provider_scope_semantics:
+    RU_PROVIDER: Provider is treated as a Russian-provider signal for catalog purposes; actual contract/data flow still requires
+      verification.
+    RU_MARKET_PROVIDER: Provider is common in the Russian market; legal entity/infrastructure may require project-specific
+      verification.
+    FOREIGN_PROVIDER: Foreign-provider signal only; not evidence of unlawful transfer.
+    MIXED_REQUIRES_CONTRACT_CHECK: Service exposes multiple infrastructure/contract options; project configuration must be
+      checked.
+services:
+- id: yandex-metrica
+  name: Yandex Metrica
+  category: analytics
+  domains:
+  - mc.yandex.ru
+  - mc.yandex.com
+  - mc.webvisor.com
+  - mc.webvisor.org
+  - yastatic.net
+  provider: Yandex
+  provider_scope: RU_PROVIDER
+  enabled: true
+  confidence: HIGH
+  source: https://yandex.ru/support/metrica/en/code/install-counter-csp
+  note: Detection indicates use of Metrica/Webvisor endpoints; do not infer legal compliance from provider alone.
+- id: yandex-smartcaptcha
+  name: Yandex SmartCaptcha
+  category: captcha
+  domains:
+  - smartcaptcha.yandexcloud.net
+  - captcha-api.yandex.ru
+  provider: Yandex Cloud
+  provider_scope: RU_PROVIDER
+  enabled: true
+  confidence: HIGH
+  source: https://yandex.cloud/ru/docs/smartcaptcha/
+  note: Captcha service; data-flow interpretation depends on actual integration and contract.
+- id: yandex-maps
+  name: Yandex Maps JavaScript API
+  category: maps
+  domains:
+  - api-maps.yandex.ru
+  provider: Yandex
+  provider_scope: RU_PROVIDER
+  enabled: true
+  confidence: HIGH
+  source: https://yandex.ru/maps-api/docs/js-api/common/quickstart.html
+  note: Client-side map API.
+- id: google-tag
+  name: Google tag / Google Analytics
+  category: analytics
+  domains:
+  - www.googletagmanager.com
+  - google-analytics.com
+  - www.google-analytics.com
+  provider: Google
+  provider_scope: FOREIGN_PROVIDER
+  enabled: true
+  confidence: HIGH
+  source: https://developers.google.com/tag-platform/gtagjs
+  note: Detection is a foreign-service signal, not proof of unlawful cross-border transfer.
+- id: google-recaptcha
+  name: Google reCAPTCHA
+  category: captcha
+  domains:
+  - www.google.com
+  - www.recaptcha.net
+  path_hints:
+  - /recaptcha/
+  provider: Google
+  provider_scope: FOREIGN_PROVIDER
+  enabled: true
+  confidence: HIGH
+  source: https://developers.google.com/recaptcha/docs/v3
+  note: Use path hint to avoid classifying all google.com requests as reCAPTCHA.
+- id: google-maps
+  name: Google Maps JavaScript API
+  category: maps
+  domains:
+  - maps.googleapis.com
+  provider: Google
+  provider_scope: FOREIGN_PROVIDER
+  enabled: true
+  confidence: HIGH
+  source: https://developers.google.com/maps/documentation/javascript/load-maps-js-api
+  note: Foreign-service signal only; inspect actual requests and data.
+- id: top-mail-ru
+  name: Top.Mail.Ru
+  category: analytics
+  domains:
+  - top.mail.ru
+  - top-fwz1.mail.ru
+  provider: VK / Mail.ru ecosystem
+  provider_scope: RU_PROVIDER
+  enabled: true
+  confidence: HIGH
+  source: https://top.mail.ru/help/ru/code/csp
+  note: Counter/analytics detection.
+- id: jivo
+  name: Jivo
+  category: chat
+  domains:
+  - code.jivo.ru
+  - jivo.ru
+  - jivosite.com
+  provider: Jivo
+  provider_scope: RU_MARKET_PROVIDER
+  enabled: true
+  confidence: HIGH
+  source: https://www.jivo.ru/help/installation/diafan-cms-ustanovka-koda-chata.html
+  note: Widget may collect messages/contact data; actual data flow depends on configuration.
+- id: bitrix24-widget
+  name: Bitrix24 website widget / CRM forms
+  category: crm_form_chat
+  domains:
+  - bitrix24.ru
+  - bitrix24.com
+  provider: Bitrix24
+  provider_scope: RU_PROVIDER
+  enabled: true
+  confidence: MEDIUM
+  source: https://helpdesk.bitrix24.ru/open/25268342/
+  note: Use script/form signatures where possible because customer portals use many subdomains.
+- id: amocrm-forms
+  name: amoCRM forms
+  category: crm_form
+  domains:
+  - amocrm.ru
+  provider: amoCRM
+  provider_scope: RU_MARKET_PROVIDER
+  enabled: true
+  confidence: MEDIUM
+  source: https://www.amocrm.ru/developers/content/web_sdk/forms
+  note: Detection should prefer form/script signatures over any generic amocrm.ru link.
+- id: roistat
+  name: Roistat
+  category: analytics_calltracking
+  domains:
+  - cloud.roistat.com
+  - cloud-eu.roistat.com
+  provider: Roistat
+  provider_scope: MIXED_REQUIRES_CONTRACT_CHECK
+  enabled: true
+  confidence: HIGH
+  source: https://help-en.roistat.com/settings/project/tracking_code/installing/
+  note: Official docs describe both standard and EU mirror hosts. Do not infer storage location from host alone.
+- id: calltouch
+  name: Calltouch
+  category: analytics_calltracking
+  domains:
+  - mod.calltouch.ru
+  - calltouch.ru
+  provider: Calltouch
+  provider_scope: RU_PROVIDER
+  enabled: true
+  confidence: HIGH
+  source: https://www.calltouch.ru/support/ustanovka-skripta-otslezhivaniya-calltouch/
+  note: Tracking/calltracking integration.
+- id: mindbox
+  name: Mindbox JavaScript SDK
+  category: marketing_automation
+  domains:
+  - mindbox.ru
+  provider: Mindbox
+  provider_scope: RU_PROVIDER
+  enabled: true
+  confidence: MEDIUM
+  source: https://developers.mindbox.ru/docs/javascript-sdk
+  note: Projects may use different Mindbox API subdomains; detect tracker signature plus *.mindbox.ru.
+- id: sendsay
+  name: Sendsay forms / Web Push
+  category: marketing_messaging
+  domains:
+  - sendsay.ru
+  provider: Sendsay
+  provider_scope: RU_PROVIDER
+  enabled: true
+  confidence: MEDIUM
+  source: https://docs.sendsay.ru/forms/signup-forms/
+  note: Forms can collect email; Web Push uses browser permission flow.
+- id: dadata
+  name: DaData Suggestions API
+  category: data_enrichment
+  domains:
+  - suggestions.dadata.ru
+  provider: DaData
+  provider_scope: RU_PROVIDER
+  enabled: true
+  confidence: HIGH
+  source: https://dadata.ru/api/suggest/address/
+  note: 'Actual query content matters: address/name/email suggestions may transmit user-entered values.'
+- id: vk-pixel
+  name: VK Advertising Pixel
+  category: advertising_pixel
+  domains:
+  - vk.com
+  - ads.vk.com
+  provider: VK
+  provider_scope: RU_PROVIDER
+  enabled: false
+  confidence: CANDIDATE
+  note: Verify exact current script/network signatures before enabling.
+- id: vk-widgets
+  name: VK Widgets
+  category: social_widget
+  domains:
+  - vk.com
+  provider: VK
+  provider_scope: RU_PROVIDER
+  enabled: false
+  confidence: CANDIDATE
+  note: Generic vk.com domain is too broad without widget signature.
+- id: unisender
+  name: UniSender forms
+  category: marketing_messaging
+  domains:
+  - unisender.com
+  - unisender.ru
+  provider: UniSender
+  provider_scope: RU_MARKET_PROVIDER
+  enabled: false
+  confidence: CANDIDATE
+  note: Verify current embed/script domains before enabling.
+- id: rutube
+  name: RUTUBE embedded player
+  category: video
+  domains:
+  - rutube.ru
+  provider: RUTUBE
+  provider_scope: RU_PROVIDER
+  enabled: false
+  confidence: CANDIDATE
+  note: Enable after verifying current embed hostname/path.
+- id: youtube
+  name: YouTube embedded player
+  category: video
+  domains:
+  - youtube.com
+  - www.youtube.com
+  - youtube-nocookie.com
+  - www.youtube-nocookie.com
+  provider: Google
+  provider_scope: FOREIGN_PROVIDER
+  enabled: false
+  confidence: CANDIDATE
+  note: Require /embed/ iframe signature before enabling.
+- id: liveinternet
+  name: LiveInternet counter
+  category: analytics
+  domains:
+  - liveinternet.ru
+  - counter.yadro.ru
+  provider: LiveInternet
+  provider_scope: RU_MARKET_PROVIDER
+  enabled: false
+  confidence: CANDIDATE
+  note: Verify current official signatures.
+- id: carrotquest
+  name: Carrot quest
+  category: chat_marketing
+  domains:
+  - carrotquest.io
+  provider: Carrot quest
+  provider_scope: RU_MARKET_PROVIDER
+  enabled: false
+  confidence: CANDIDATE
+  note: Verify current tracker/widget host.
+- id: envybox
+  name: Envybox
+  category: callback_chat
+  domains:
+  - envybox.io
+  - envybox.ru
+  provider: Envybox
+  provider_scope: RU_MARKET_PROVIDER
+  enabled: false
+  confidence: CANDIDATE
+  note: Verify current widget host.
+- id: comagic
+  name: CoMagic
+  category: calltracking_analytics
+  domains:
+  - comagic.ru
+  provider: CoMagic
+  provider_scope: RU_PROVIDER
+  enabled: false
+  confidence: CANDIDATE
+  note: Verify current script host.
+- id: uis
+  name: UIS
+  category: calltracking_telephony
+  domains:
+  - uiscom.ru
+  provider: UIS
+  provider_scope: RU_PROVIDER
+  enabled: false
+  confidence: CANDIDATE
+  note: Verify current widget/script host.
+- id: mango-office
+  name: Mango Office widgets
+  category: telephony_callback
+  domains:
+  - mango-office.ru
+  provider: Mango Office
+  provider_scope: RU_PROVIDER
+  enabled: false
+  confidence: CANDIDATE
+  note: Verify current widget endpoints.
+- id: marquiz
+  name: Marquiz
+  category: quiz_form
+  domains:
+  - marquiz.ru
+  provider: Marquiz
+  provider_scope: RU_MARKET_PROVIDER
+  enabled: false
+  confidence: CANDIDATE
+  note: Verify embed script host and form submission endpoints.
+- id: yclients
+  name: YCLIENTS widget
+  category: booking
+  domains:
+  - yclients.com
+  provider: YCLIENTS
+  provider_scope: RU_MARKET_PROVIDER
+  enabled: false
+  confidence: CANDIDATE
+  note: Verify current booking/widget hosts and legal entity/configuration.
+- id: retailcrm
+  name: RetailCRM widgets/forms
+  category: crm
+  domains:
+  - retailcrm.ru
+  provider: RetailCRM
+  provider_scope: RU_PROVIDER
+  enabled: false
+  confidence: CANDIDATE
+  note: Verify website-side signatures before enabling.
+- id: cloudpayments
+  name: CloudPayments checkout
+  category: payment
+  domains:
+  - cloudpayments.ru
+  provider: CloudPayments
+  provider_scope: RU_PROVIDER
+  enabled: false
+  confidence: CANDIDATE
+  note: Payment provider detection is informational; do not capture card data.
+- id: yookassa
+  name: ЮKassa
+  category: payment
+  domains:
+  - yookassa.ru
+  provider: ЮKassa
+  provider_scope: RU_PROVIDER
+  enabled: false
+  confidence: CANDIDATE
+  note: Verify checkout/widget hosts before enabling.
+- id: robokassa
+  name: Robokassa
+  category: payment
+  domains:
+  - robokassa.ru
+  provider: Robokassa
+  provider_scope: RU_PROVIDER
+  enabled: false
+  confidence: CANDIDATE
+  note: Verify checkout endpoints before enabling.
+- id: meta-pixel
+  name: Meta Pixel
+  category: advertising_pixel
+  domains:
+  - connect.facebook.net
+  - facebook.com
+  provider: Meta
+  provider_scope: FOREIGN_PROVIDER
+  enabled: false
+  confidence: CANDIDATE
+  note: Verify signature fbq/init before enabling; foreign service ≠ automatic violation.
+- id: tiktok-pixel
+  name: TikTok Pixel
+  category: advertising_pixel
+  domains:
+  - analytics.tiktok.com
+  provider: TikTok
+  provider_scope: FOREIGN_PROVIDER
+  enabled: false
+  confidence: CANDIDATE
+  note: Verify current official endpoint/signature before enabling.
+- id: hotjar
+  name: Hotjar
+  category: analytics_session_replay
+  domains:
+  - hotjar.com
+  - hotjar.io
+  provider: Hotjar
+  provider_scope: FOREIGN_PROVIDER
+  enabled: false
+  confidence: CANDIDATE
+  note: Verify current script hosts; inspect actual data flow.
+- id: microsoft-clarity
+  name: Microsoft Clarity
+  category: analytics_session_replay
+  domains:
+  - clarity.ms
+  provider: Microsoft
+  provider_scope: FOREIGN_PROVIDER
+  enabled: false
+  confidence: CANDIDATE
+  note: Verify current script hosts before enabling.
+- id: hubspot
+  name: HubSpot forms/tracking
+  category: crm_marketing
+  domains:
+  - hubspot.com
+  - hs-scripts.com
+  - hsforms.com
+  provider: HubSpot
+  provider_scope: FOREIGN_PROVIDER
+  enabled: false
+  confidence: CANDIDATE
+  note: Verify exact official current host patterns.
+- id: segment
+  name: Twilio Segment
+  category: customer_data_platform
+  domains:
+  - segment.com
+  - segment.io
+  provider: Twilio Segment
+  provider_scope: FOREIGN_PROVIDER
+  enabled: false
+  confidence: CANDIDATE
+  note: Verify current CDN/ingestion endpoints before enabling.

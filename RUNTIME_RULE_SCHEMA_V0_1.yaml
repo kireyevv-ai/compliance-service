@@ -1,0 +1,29 @@
+schema:
+  name: Runtime Rule Schema v0.1
+  date: '2026-09-06'
+  purpose: Минимальный контракт Rule Engine для первой волны deterministic rules.
+  principles:
+  - Rules consume normalized Facts and Evidence; they do not scrape HTML themselves.
+  - Rule evaluation is deterministic for the first wave.
+  - No LLM inside Rule Engine.
+  - PASS/FAIL/WARNING/MANUAL_CHECK remain distinct.
+  - NO_EVALUATION means no Finding is created when applicability is false.
+  - A FAIL must reference evidence sufficient for the concrete failed condition.
+  - Historical Findings preserve rule_id and rule_version.
+  fields:
+    rule_id: stable string identifier
+    version: integer version
+    title: human-readable title
+    module: rule module
+    status_if_triggered: FAIL|WARNING|MANUAL_CHECK
+    applies_to: site types / applicability conditions
+    required_facts: facts needed for deterministic evaluation
+    trigger: declarative condition over normalized facts
+    pass_condition: condition for PASS when applicable and facts sufficient
+    evidence_requirements: fact/evidence refs required for triggered result
+    legal_strength: MANDATORY|REGULATOR_RECOMMENDATION|RISK_SIGNAL
+    legal_basis: source reference metadata
+    remediation: user-facing remediation text
+    effective_from: date or null
+    effective_to: date or null
+    last_verified_at: date
