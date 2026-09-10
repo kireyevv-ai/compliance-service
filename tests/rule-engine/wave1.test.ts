@@ -142,6 +142,7 @@ describe("Wave 1 runtime rule engine", () => {
       "CON-002"
     ]);
     expect(rules.every((rule) => rule.version === "1")).toBe(true);
+    expect(rules.every((rule) => rule.evaluatorType === "DETERMINISTIC")).toBe(true);
     expect(rules.every((rule) => rule.passSummary && rule.passSummary !== rule.title)).toBe(true);
   });
 
@@ -496,6 +497,50 @@ describe("Wave 1 runtime rule engine", () => {
     const evaluations = evaluateRulesForScan({ scan, facts, evidence: [], rules: loadRuntimeRules() });
 
     expect(statusFor(evaluations, "PD-001")).toBe("NO_EVALUATION");
+  });
+
+  it("does not run non-deterministic rules through the deterministic evaluator", async () => {
+    const scan = await createScan(db, "B2B");
+    const deterministicRule = loadRuntimeRules().find((rule) => rule.ruleId === "PD-001")!;
+    const facts = [
+      {
+        id: "00000000-0000-4000-8000-000000000111",
+        scanId: scan.id,
+        factType: "scan_coverage",
+        value: { crawlCompleted: true },
+        createdAt: new Date()
+      },
+      {
+        id: "00000000-0000-4000-8000-000000000112",
+        scanId: scan.id,
+        pageUrl: "https://example.test/form",
+        factType: "personal_data_collection_found",
+        value: { found: true },
+        createdAt: new Date()
+      },
+      {
+        id: "00000000-0000-4000-8000-000000000113",
+        scanId: scan.id,
+        factType: "privacy_policy_link_found",
+        value: { found: false },
+        createdAt: new Date()
+      }
+    ];
+
+    for (const evaluatorType of ["LLM_SEMANTIC", "OWNER_MANUAL"] as const) {
+      const [evaluation] = evaluateRulesForScan({
+        scan,
+        facts,
+        evidence: [],
+        rules: [{ ...deterministicRule, evaluatorType }]
+      });
+
+      expect(evaluation).toMatchObject({
+        ruleId: "PD-001",
+        status: "NO_EVALUATION",
+        reason: `Unsupported evaluator_type=${evaluatorType}`
+      });
+    }
   });
 
   it("links EC-003 PASS to the source legal-name candidate evidence", async () => {

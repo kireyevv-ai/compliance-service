@@ -15,6 +15,7 @@ schema:
     version: integer version
     title: human-readable title
     module: rule module
+    evaluator_type: DETERMINISTIC|LLM_SEMANTIC|OWNER_MANUAL
     status_if_triggered: FAIL|WARNING|MANUAL_CHECK
     applies_to: site types / applicability conditions
     required_facts: facts needed for deterministic evaluation

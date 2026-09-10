@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { FINDING_STATUSES, SEVERITIES, SITE_TYPES } from "@/db/schema";
 
+export const EVALUATOR_TYPES = ["DETERMINISTIC", "LLM_SEMANTIC", "OWNER_MANUAL"] as const;
+
 export const ruleEvaluationDefinitionSchema = z.object({
   kind: z.literal("FACT_PATTERN"),
   conditions: z.record(z.string(), z.unknown())
@@ -12,6 +14,7 @@ export const ruleSchema = z.object({
   title: z.string().min(1),
   pass_summary: z.string().min(1),
   module: z.string().min(1),
+  evaluator_type: z.enum(EVALUATOR_TYPES),
   legal_strength: z.enum(["MANDATORY", "REGULATOR_RECOMMENDATION", "RISK_SIGNAL"]).optional(),
   status_if_triggered: z.enum(FINDING_STATUSES).optional(),
   applies_to: z.array(z.enum(SITE_TYPES)).min(1),

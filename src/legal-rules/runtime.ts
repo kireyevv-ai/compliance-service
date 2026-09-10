@@ -9,6 +9,7 @@ export function loadRuntimeRules(): Rule[] {
     title: rule.title,
     passSummary: rule.pass_summary,
     module: rule.module,
+    evaluatorType: rule.evaluator_type,
     appliesTo: rule.applies_to,
     requiredFacts: rule.required_facts,
     legalBasis: rule.legal_basis,

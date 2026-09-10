@@ -10,7 +10,22 @@ describe("versioned JSON structure validation", () => {
 
     expect(rule.test_only).toBe(true);
     expect(rule.rule_id).toBe("TEST_SYNTHETIC_FORM_FACT_PRESENT");
+    expect(rule.evaluator_type).toBe("DETERMINISTIC");
     expect(rule.pass_summary).toBe("Synthetic test fact is present.");
+  });
+
+  it("accepts all supported evaluator types", () => {
+    for (const evaluatorType of ["DETERMINISTIC", "LLM_SEMANTIC", "OWNER_MANUAL"] as const) {
+      const rule = validateRuleDefinition({ ...syntheticRule, evaluator_type: evaluatorType });
+
+      expect(rule.evaluator_type).toBe(evaluatorType);
+    }
+  });
+
+  it("rejects unsupported evaluator types", () => {
+    expect(() =>
+      validateRuleDefinition({ ...syntheticRule, evaluator_type: "UNSUPPORTED_EVALUATOR" })
+    ).toThrow();
   });
 
   it("validates the synthetic external services catalog", () => {

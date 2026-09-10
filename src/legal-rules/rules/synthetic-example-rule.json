@@ -4,6 +4,7 @@
   "title": "Synthetic test rule for validating rule file structure",
   "pass_summary": "Synthetic test fact is present.",
   "module": "synthetic",
+  "evaluator_type": "DETERMINISTIC",
   "applies_to": ["B2B", "B2C_SERVICE", "ECOMMERCE", "OTHER"],
   "required_facts": ["synthetic_fact_found"],
   "legal_basis": [],

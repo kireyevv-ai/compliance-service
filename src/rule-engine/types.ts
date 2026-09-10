@@ -1,5 +1,7 @@
 import type { SiteType, FindingStatus, Severity } from "@/db/schema";
 
+export type EvaluatorType = "DETERMINISTIC" | "LLM_SEMANTIC" | "OWNER_MANUAL";
+
 export interface RuleEvaluationDefinition {
   kind: "FACT_PATTERN";
   conditions: Record<string, unknown>;
@@ -11,6 +13,7 @@ export interface Rule {
   title: string;
   passSummary: string;
   module: string;
+  evaluatorType: EvaluatorType;
   legalStrength: string;
   statusIfTriggered: FindingStatus;
   appliesTo: SiteType[];

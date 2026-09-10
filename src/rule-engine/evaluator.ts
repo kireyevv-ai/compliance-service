@@ -24,6 +24,10 @@ export function evaluateRulesForScan(input: {
 }
 
 export function evaluateRule(scan: Scan, rule: Rule, index: FactIndex): RuleEvaluationResult {
+  if (rule.evaluatorType !== "DETERMINISTIC") {
+    return noEvaluation(rule, `Unsupported evaluator_type=${rule.evaluatorType}`);
+  }
+
   if (!rule.appliesTo.includes(scan.siteType)) {
     return noEvaluation(rule, `Rule does not apply to site_type=${scan.siteType}`);
   }
