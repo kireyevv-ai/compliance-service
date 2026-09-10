@@ -16,6 +16,9 @@ This map classifies all 50 legal rules by the evaluator layer that should own th
 
 - Stage 1 deterministic core acceptance: PASS.
 - Runtime active wave: 15 rules (`PD-001`, `PD-002`, `PD-003`, `EC-001`-`EC-009`, `EC-013`, `CON-001`, `CON-002`).
+- Evidence currently allows implementation without new extraction for 17 rules total: the 15 active rules plus `PD-006` and `PD-011`.
+- Active rules remain 15 until additional evaluator logic and golden cases are explicitly reviewed.
+- Rules that still require new Evidence, semantic extraction, or owner/manual context: 33.
 - Test suite after flaky stabilization: `npm.cmd test` PASS, 13 files / 117 tests; `npm.cmd run typecheck` PASS.
 - Flaky fix made: test-only timeout increase for the largest browser-audit scenario in `tests/scanner/browser-audit.test.ts`; production scan limits unchanged.
 
@@ -42,7 +45,7 @@ This map classifies all 50 legal rules by the evaluator layer that should own th
 | `PD-017` | `LLM_SEMANTIC` | Form fields plus policy data-category coverage comparison | Form fields yes; policy parsing missing | `PASS`, `WARNING`, `NO_EVALUATION` | Policy unavailable or field/category mapping uncertain | No | LLM comparison fact: `collected_fields_not_covered_by_policy` |
 | `PD-018` | `LLM_SEMANTIC` | External service evidence plus policy/service disclosure comparison | External service evidence yes; policy parsing missing | `PASS`, `WARNING`, `NO_EVALUATION` | Service role cannot be inferred or policy unavailable | No | LLM reviewer fact: `service_not_reflected_in_policy` |
 | `PD-019` | `LLM_SEMANTIC` | Policy no-third-party-transfer claim plus third-party service evidence | Third-party service evidence yes; policy claim parsing missing | `PASS`, `WARNING`, `NO_EVALUATION` | Claim wording ambiguous or service role unclear | No | LLM reviewer fact: `policy_no_third_party_transfer_claim` |
-| `PD-020` | `OWNER_MANUAL` | PD collection page plus foreign provider/endpoint signal | Mostly yes via browser/network/catalog | `MANUAL_CHECK`, `NO_EVALUATION` | Foreign service on PD page but actual data transfer/role unknown | Candidate for manual check only | Link service signal to PD collection page; owner context later for actual flow |
+| `PD-020` | `DETERMINISTIC` | PD collection page plus foreign provider/endpoint signal | Mostly yes via browser/network/catalog | `MANUAL_CHECK`, `NO_EVALUATION`; technical risk signal only | Actual data transfer/role unknown; legal cross-border/localization conclusion requires owner/manual context | Candidate | Link service signal to PD collection page; keep separate from any legal conclusion about cross-border transfer/localization |
 | `PD-021` | `DETERMINISTIC` | Form action/config target and provider/host scope | Partial: form action exists; JS config extraction limited | `PASS`, `WARNING`, `NO_EVALUATION` | Target not visible or host/provider classification uncertain | Candidate | Deterministic foreign-host matcher for `form_action_target` / `rendered_form_action_target`; no localization `FAIL` |
 | `PD-022` | `OWNER_MANUAL` | PD collection evidence plus database location context | PD collection yes; DB location never externally knowable | `MANUAL_CHECK`, `NO_EVALUATION` | Any PD collection with unknown primary DB location | Candidate for manual check only | Owner question/fact for primary DB location |
 | `PD-023` | `OWNER_MANUAL` | Confident operator identity, automated processing, RKN registry result | Operator identity/registry lookup absent | `WARNING`, `MANUAL_CHECK`, `NO_EVALUATION` | Operator identity uncertain or registry search needs confirmation | No | Owner/operator identification and registry lookup workflow |
@@ -82,12 +85,18 @@ This map classifies all 50 legal rules by the evaluator layer that should own th
 
 ### Near-Term Deterministic Candidates
 
-These have enough or nearly enough evidence, but should only be activated after explicit golden cases and evaluator review:
+These have enough or nearly enough evidence, but should only be activated after explicit golden cases and evaluator review.
 
-- `PD-004`
+Additional rules with already sufficient Evidence and no new extraction required:
+
 - `PD-006`
 - `PD-011`
+
+Other narrow deterministic candidates that still need a small fact/evaluator gap closed:
+
+- `PD-004`
 - `PD-021`
+- `PD-020`
 - `EC-011`
 
 ### Stage 2 LLM Semantic Reviewer Candidates
@@ -99,11 +108,21 @@ Highest leverage rules for the first semantic reviewer artifact:
 - Document reality check lite: `PD-017`, `PD-018`, `PD-019`
 - Special/sensitive text signals: `PD-024`, `EC-010`, `EC-012`, `REC-003`, `LANG-001`
 
+First shadow-mode pilot:
+
+- `PD-008`
+- `PD-013`
+- `PD-014`
+- `PD-015`
+- `PD-016`
+
+`PD-009` remains the next candidate after the pilot.
+
 ### Owner/Manual Context Rules
 
 These should not become automatic deterministic or LLM-only `FAIL` rules:
 
-- `PD-007`, `PD-012`, `PD-020`, `PD-022`, `PD-023`
+- `PD-007`, `PD-012`, `PD-022`, `PD-023`
 - `ADV-001`, `ADV-002`, `ADV-003`, `ADV-004`
 - `AUTH-001`
 - `REC-001`, `REC-002`, `REC-004`
