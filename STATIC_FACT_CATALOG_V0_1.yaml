@@ -66,6 +66,11 @@ facts:
   source: H
   definition: Нормализованный URL найденной policy.
   used_by: PD-002, PD-004
+- fact_type: privacy_policy_text
+  scope: DOCUMENT
+  source: H
+  definition: Читаемый текст HTML-страницы политики из уже crawled pages, с source URL и metadata originalTextLength/truncated/maxChars; cap 50k chars; PDF parsing не входит.
+  used_by: PD-013, PD-014, PD-015, PD-016
 - fact_type: policy_access_from_collection_page
   scope: PAGE
   source: H

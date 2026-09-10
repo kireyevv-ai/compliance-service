@@ -13,6 +13,7 @@ export type StaticFactType =
   | "marketing_subscription_detected"
   | "privacy_policy_link_found"
   | "privacy_policy_url"
+  | "privacy_policy_text"
   | "policy_access_from_collection_page"
   | "offer_link_found"
   | "offer_url"

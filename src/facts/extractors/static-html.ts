@@ -1,6 +1,7 @@
 import * as cheerio from "cheerio";
 import type { CrawledPage } from "@/scanner/crawl/types";
 import type { ExtractedEvidence, ExtractedFact, StaticExtractionOptions, StaticExtractionResult } from "./types";
+import { extractPolicyTextFacts } from "./policy-text";
 
 type LinkCandidate = {
   url: string;
@@ -147,6 +148,7 @@ export function extractStaticFacts(
   }
 
   pushCandidateFacts(facts, sellerCandidates);
+  facts.push(...extractPolicyTextFacts(pages, unique(privacyLinks.map((link) => link.url))));
   pushCoverageAndCompletedAggregates(facts, pages, options, {
     privacyLinks,
     offerLinks,

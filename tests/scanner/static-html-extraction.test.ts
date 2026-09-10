@@ -30,6 +30,12 @@ function hasFact(result: { facts: ExtractedFact[] }, factType: ExtractedFact["fa
   return result.facts.some((fact) => fact.factType === factType);
 }
 
+function evidencePayloads(result: { facts: ExtractedFact[] }, factType: ExtractedFact["factType"]) {
+  return result.facts
+    .filter((fact) => fact.factType === factType)
+    .flatMap((fact) => fact.evidence.map((evidence) => evidence.payload));
+}
+
 function createTestDb(): Queryable {
   const db = newDb();
   const schema = readFileSync(
@@ -95,6 +101,9 @@ describe("static HTML fact extraction", () => {
     expect(values(result, "policy_access_from_collection_page")).toContainEqual(
       expect.objectContaining({ found: true })
     );
+    expect(evidencePayloads(result, "consent_text")[0]).toMatchObject({
+      context: expect.stringContaining("Согласие на обработку персональных данных")
+    });
   });
 
   it("does not classify a form without personal-data signals as personal-data collection", () => {
@@ -300,6 +309,108 @@ describe("static HTML fact extraction", () => {
     expect(values(result, "privacy_policy_link_found")).not.toContainEqual(
       expect.objectContaining({ found: false })
     );
+  });
+
+  it("extracts readable privacy policy text evidence from crawled HTML policy pages", () => {
+    const result = extractStaticFacts(
+      [
+        page("https://example.test/", `<a href="/privacy">Политика обработки персональных данных</a>`),
+        page(
+          "https://example.test/privacy",
+          `
+            <header>Главное меню</header>
+            <nav>Каталог Новости Контакты</nav>
+            <main>
+              <h1>Политика обработки персональных данных</h1>
+              <p>Цель обработки: подготовка ответа на обращение пользователя.</p>
+              <p>Категории данных: имя, телефон, адрес электронной почты.</p>
+            </main>
+            <script>window.secret = "do-not-include"</script>
+            <style>body { color: red; }</style>
+            <footer>Подвал сайта</footer>
+          `
+        )
+      ],
+      { crawlCompleted: true, startUrl: "https://example.test/" }
+    );
+
+    expect(values(result, "privacy_policy_text")[0]).toMatchObject({
+      sourceUrl: "https://example.test/privacy",
+      text: expect.stringContaining("Цель обработки"),
+      truncated: false
+    });
+    expect(evidencePayloads(result, "privacy_policy_text")[0]).toMatchObject({
+      kind: "privacy_policy_text",
+      sourceUrl: "https://example.test/privacy",
+      text: expect.stringContaining("Категории данных")
+    });
+    expect(JSON.stringify(values(result, "privacy_policy_text"))).not.toContain("Главное меню");
+    expect(JSON.stringify(values(result, "privacy_policy_text"))).not.toContain("window.secret");
+    expect(JSON.stringify(values(result, "privacy_policy_text"))).not.toContain("Подвал сайта");
+  });
+
+  it("preserves policy text over the previous 12k limit when under the 50k cap", () => {
+    const longPolicyText = Array.from({ length: 1_000 }, (_value, index) => `Пункт политики ${index}`).join(". ");
+    const result = extractStaticFacts(
+      [
+        page("https://example.test/", `<a href="/privacy">Privacy</a>`),
+        page("https://example.test/privacy", `<main>${longPolicyText}</main>`)
+      ],
+      { crawlCompleted: true, startUrl: "https://example.test/" }
+    );
+    const policyText = values(result, "privacy_policy_text")[0] as {
+      sourceUrl: string;
+      text: string;
+      truncated: boolean;
+      maxChars: number;
+      originalTextLength: number;
+    };
+
+    expect(policyText.sourceUrl).toBe("https://example.test/privacy");
+    expect(policyText.originalTextLength).toBeGreaterThan(12_000);
+    expect(policyText.originalTextLength).toBeLessThan(policyText.maxChars);
+    expect(policyText.truncated).toBe(false);
+    expect(policyText.text.length).toBe(policyText.originalTextLength);
+    expect(policyText.maxChars).toBe(50_000);
+  });
+
+  it("marks privacy policy text over the 50k cap as truncated", () => {
+    const longPolicyText = Array.from({ length: 4_000 }, (_value, index) => `Пункт политики ${index}`).join(". ");
+    const result = extractStaticFacts(
+      [
+        page("https://example.test/", `<a href="/privacy">Privacy</a>`),
+        page("https://example.test/privacy", `<main>${longPolicyText}</main>`)
+      ],
+      { crawlCompleted: true, startUrl: "https://example.test/" }
+    );
+    const policyText = values(result, "privacy_policy_text")[0] as {
+      text: string;
+      truncated: boolean;
+      maxChars: number;
+      originalTextLength: number;
+    };
+
+    expect(policyText.maxChars).toBe(50_000);
+    expect(policyText.truncated).toBe(true);
+    expect(policyText.text.length).toBe(policyText.maxChars);
+    expect(policyText.originalTextLength).toBeGreaterThan(policyText.maxChars);
+  });
+
+  it("does not invent privacy policy text evidence when policy page text is absent or not crawled", () => {
+    const notCrawled = extractStaticFacts(
+      [page("https://example.test/", `<a href="/privacy">Политика обработки персональных данных</a>`)],
+      { crawlCompleted: true, startUrl: "https://example.test/" }
+    );
+    const emptyPolicy = extractStaticFacts(
+      [
+        page("https://example.test/", `<a href="/privacy">Политика обработки персональных данных</a>`),
+        page("https://example.test/privacy", `<html><body><nav>Меню</nav><script>1</script></body></html>`)
+      ],
+      { crawlCompleted: true, startUrl: "https://example.test/" }
+    );
+
+    expect(values(notCrawled, "privacy_policy_text")).toEqual([]);
+    expect(values(emptyPolicy, "privacy_policy_text")).toEqual([]);
   });
 });
 
