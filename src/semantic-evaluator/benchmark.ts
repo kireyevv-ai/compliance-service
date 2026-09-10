@@ -3,11 +3,18 @@ import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { evaluateSemanticRule } from "./evaluator";
 import { buildBenchmarkInput, PILOT_BENCHMARK_CASES, type PilotBenchmarkCase } from "./benchmark-dataset";
-import type { SemanticEvaluation, SemanticEvaluationResult, SemanticEvaluationStatus, SemanticModelProvider } from "./types";
+import type {
+  SemanticEvaluation,
+  SemanticEvaluationResult,
+  SemanticEvaluationStatus,
+  SemanticModelProvider,
+  SemanticSchemaFailureDiagnostic
+} from "./types";
 
 export type BenchmarkActualStatus = SemanticEvaluationStatus | "NO_EVALUATION";
 
 export interface BenchmarkResultRow {
+  benchmark_phase?: "main";
   case_id: string;
   rule_id: string;
   expected: SemanticEvaluationStatus;
@@ -17,7 +24,15 @@ export interface BenchmarkResultRow {
   evidence_refs: string[];
   duration_ms: number;
   technical_error_code: string | null;
+  schema_failure: SemanticSchemaFailureDiagnostic | null;
 }
+
+export interface BenchmarkStabilityRunRow extends Omit<BenchmarkResultRow, "benchmark_phase"> {
+  benchmark_phase: "stability";
+  stability_run: number;
+}
+
+export type BenchmarkArtifactRow = BenchmarkResultRow | BenchmarkStabilityRunRow;
 
 export interface BenchmarkMetrics {
   total_cases: number;
@@ -44,6 +59,7 @@ export interface StabilityResult {
 
 export interface BenchmarkRunResult {
   results: BenchmarkResultRow[];
+  stabilityRuns: BenchmarkStabilityRunRow[];
   metrics: BenchmarkMetrics;
   stability: StabilityResult[];
 }
@@ -69,19 +85,22 @@ export async function runPilotBenchmark(options: RunBenchmarkOptions): Promise<B
 
   const stabilityCases = cases.slice(0, options.stabilityCaseCount ?? 10);
   const stabilityRuns = options.stabilityRuns ?? 3;
+  const stabilityRunRows: BenchmarkStabilityRunRow[] = [];
   const stability: StabilityResult[] = [];
   for (const testCase of stabilityCases) {
     const rows: BenchmarkResultRow[] = [];
     for (let index = 0; index < stabilityRuns; index += 1) {
-      rows.push(await evaluateCase(testCase, options.provider, options.timeoutMs));
+      const row = await evaluateCase(testCase, options.provider, options.timeoutMs);
+      rows.push(row);
+      stabilityRunRows.push({ ...row, benchmark_phase: "stability", stability_run: index + 1 });
     }
     stability.push(stabilityFor(testCase, rows));
   }
 
-  return { results, metrics: calculateBenchmarkMetrics(results), stability };
+  return { results, stabilityRuns: stabilityRunRows, metrics: calculateBenchmarkMetrics(results), stability };
 }
 
-export async function writeBenchmarkJsonl(filePath: string, rows: BenchmarkResultRow[]): Promise<void> {
+export async function writeBenchmarkJsonl(filePath: string, rows: BenchmarkArtifactRow[]): Promise<void> {
   await mkdir(path.dirname(filePath), { recursive: true });
   await writeFile(filePath, rows.map((row) => JSON.stringify(row)).join("\n") + "\n", "utf8");
 }
@@ -129,7 +148,8 @@ async function evaluateCase(
     reason_code: guarded.status === "NO_EVALUATION" ? null : guarded.reasonCode,
     evidence_refs: guarded.status === "NO_EVALUATION" ? [] : guarded.evidenceRefs,
     duration_ms: duration,
-    technical_error_code: guarded.status === "NO_EVALUATION" ? guarded.technicalErrorCode : null
+    technical_error_code: guarded.status === "NO_EVALUATION" ? guarded.technicalErrorCode : null,
+    schema_failure: guarded.status === "NO_EVALUATION" ? guarded.schemaFailure ?? null : null
   };
 }
 

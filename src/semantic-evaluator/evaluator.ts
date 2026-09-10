@@ -8,6 +8,8 @@ import {
   type SemanticModelProvider,
   type SemanticModelRequest,
   type SemanticNoEvaluation,
+  type SemanticSchemaFailureDiagnostic,
+  type SemanticSchemaFailureKind,
   type SemanticTechnicalErrorCode
 } from "./types";
 
@@ -52,14 +54,24 @@ export async function evaluateSemanticRule(
     const parsed = parseProviderResponse(rawResponse);
 
     if (!parsed.ok) {
-      const result = noEvaluation("Semantic provider response was not valid JSON.", "MALFORMED_PROVIDER_RESPONSE");
+      const result = noEvaluation("Semantic provider response was not valid JSON.", "MALFORMED_PROVIDER_RESPONSE", {
+        kind: "JSON_PARSE_FAILED",
+        jsonParseSuccess: false,
+        presentFields: [],
+        missingRequiredFields: [],
+        unexpectedFields: []
+      });
       emitDiagnostic(options, input.ruleId, startedAt, "invalid_response", result);
       return result;
     }
 
     const validation = providerResponseSchema.safeParse(parsed.value);
     if (!validation.success) {
-      const result = noEvaluation("Semantic provider response failed schema validation.", "SCHEMA_VALIDATION_FAILED");
+      const result = noEvaluation(
+        "Semantic provider response failed schema validation.",
+        "SCHEMA_VALIDATION_FAILED",
+        schemaFailureDiagnostic(parsed.value, validation.error.issues)
+      );
       emitDiagnostic(options, input.ruleId, startedAt, "invalid_response", result);
       return result;
     }
@@ -140,8 +152,12 @@ function parseProviderResponse(rawResponse: unknown): { ok: true; value: unknown
   return { ok: false };
 }
 
-function noEvaluation(reason: string, technicalErrorCode: SemanticTechnicalErrorCode): SemanticNoEvaluation {
-  return { status: "NO_EVALUATION", reason, technicalErrorCode };
+function noEvaluation(
+  reason: string,
+  technicalErrorCode: SemanticTechnicalErrorCode,
+  schemaFailure?: SemanticSchemaFailureDiagnostic
+): SemanticNoEvaluation {
+  return { status: "NO_EVALUATION", reason, technicalErrorCode, schemaFailure };
 }
 
 function emitDiagnostic(
@@ -156,6 +172,125 @@ function emitDiagnostic(
     providerStatus,
     durationMs: Date.now() - startedAt,
     resultStatus: result.status,
-    technicalErrorCode: result.status === "NO_EVALUATION" ? result.technicalErrorCode : undefined
+    technicalErrorCode: result.status === "NO_EVALUATION" ? result.technicalErrorCode : undefined,
+    schemaFailure: result.status === "NO_EVALUATION" ? result.schemaFailure : undefined
   });
+}
+
+function schemaFailureDiagnostic(value: unknown, issues: z.ZodIssue[]): SemanticSchemaFailureDiagnostic {
+  const missingRequiredFields: string[] = [];
+  const unexpectedFields: string[] = [];
+  let field: string | undefined;
+  let expectedType: string | undefined;
+  let actualType: string | undefined;
+  let enumExpected: string[] | undefined;
+  let enumActual: string | undefined;
+  let kind: SemanticSchemaFailureKind = "OTHER_SCHEMA_FAILURE";
+
+  for (const issue of issues) {
+    const path = pathString(issue.path);
+    const code = issue.code;
+    if (code === "unrecognized_keys") {
+      const keys = (issue as z.ZodIssue & { keys?: string[] }).keys ?? [];
+      unexpectedFields.push(...keys);
+      if (kind === "OTHER_SCHEMA_FAILURE") {
+        kind = "EXTRA_FIELD";
+      }
+      continue;
+    }
+
+    if (code === "invalid_type") {
+      const expected = String((issue as z.ZodIssue & { expected?: unknown }).expected ?? "unknown");
+      const currentActualType = actualTypeAtPath(value, issue.path);
+      if (currentActualType === "undefined") {
+        missingRequiredFields.push(path);
+        if (kind === "OTHER_SCHEMA_FAILURE") {
+          kind = "MISSING_FIELD";
+        }
+      } else if (kind === "OTHER_SCHEMA_FAILURE" || kind === "EXTRA_FIELD") {
+        kind = "TYPE_MISMATCH";
+        field = path;
+        expectedType = expected;
+        actualType = currentActualType;
+      }
+      continue;
+    }
+
+    if (code === "invalid_value") {
+      if (kind === "OTHER_SCHEMA_FAILURE" || kind === "EXTRA_FIELD") {
+        kind = "ENUM_MISMATCH";
+        field = path;
+        expectedType = "enum";
+        actualType = actualTypeAtPath(value, issue.path);
+        enumExpected = enumValues(issue);
+        const actual = valueAtPath(value, issue.path);
+        enumActual = typeof actual === "string" ? actual : undefined;
+      }
+      continue;
+    }
+
+    if (!field && path) {
+      field = path;
+      actualType = actualTypeAtPath(value, issue.path);
+    }
+  }
+
+  return {
+    kind,
+    jsonParseSuccess: true,
+    presentFields: presentFields(value),
+    missingRequiredFields: unique(missingRequiredFields),
+    unexpectedFields: unique(unexpectedFields),
+    field,
+    expectedType,
+    actualType,
+    enumExpected,
+    enumActual
+  };
+}
+
+function presentFields(value: unknown): string[] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return [];
+  }
+  return Object.keys(value as Record<string, unknown>).sort();
+}
+
+function pathString(path: PropertyKey[]): string {
+  return path.map(String).join(".");
+}
+
+function valueAtPath(value: unknown, path: PropertyKey[]): unknown {
+  let current = value;
+  for (const key of path) {
+    if (!current || typeof current !== "object") {
+      return undefined;
+    }
+    current = (current as Record<PropertyKey, unknown>)[key];
+  }
+  return current;
+}
+
+function actualTypeAtPath(value: unknown, path: PropertyKey[]): string {
+  const target = valueAtPath(value, path);
+  if (Array.isArray(target)) {
+    return "array";
+  }
+  if (target === null) {
+    return "null";
+  }
+  return typeof target;
+}
+
+function enumValues(issue: z.ZodIssue): string[] | undefined {
+  const data = issue as z.ZodIssue & { values?: unknown[]; options?: unknown[] };
+  const values = data.values ?? data.options;
+  if (!Array.isArray(values)) {
+    return undefined;
+  }
+  return values.filter((value): value is string => typeof value === "string");
+}
+
+function unique(values: string[]): string[] {
+  return [...new Set(values)].sort();
 }

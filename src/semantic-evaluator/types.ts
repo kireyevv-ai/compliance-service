@@ -12,6 +12,27 @@ export type SemanticTechnicalErrorCode =
   | "EVIDENCE_REF_MISMATCH"
   | "INPUT_TOO_LARGE";
 
+export type SemanticSchemaFailureKind =
+  | "MISSING_FIELD"
+  | "EXTRA_FIELD"
+  | "TYPE_MISMATCH"
+  | "ENUM_MISMATCH"
+  | "JSON_PARSE_FAILED"
+  | "OTHER_SCHEMA_FAILURE";
+
+export interface SemanticSchemaFailureDiagnostic {
+  kind: SemanticSchemaFailureKind;
+  jsonParseSuccess: boolean;
+  presentFields: string[];
+  missingRequiredFields: string[];
+  unexpectedFields: string[];
+  field?: string;
+  expectedType?: string;
+  actualType?: string;
+  enumExpected?: string[];
+  enumActual?: string;
+}
+
 export interface SemanticEvidenceExcerpt {
   ref: string;
   evidenceId: string;
@@ -56,6 +77,7 @@ export interface SemanticNoEvaluation {
   status: "NO_EVALUATION";
   reason: string;
   technicalErrorCode: SemanticTechnicalErrorCode;
+  schemaFailure?: SemanticSchemaFailureDiagnostic;
 }
 
 export type SemanticEvaluationResult = SemanticEvaluation | SemanticNoEvaluation;
@@ -66,4 +88,5 @@ export interface SemanticEvaluationDiagnostic {
   durationMs: number;
   resultStatus?: SemanticEvaluationResult["status"];
   technicalErrorCode?: SemanticTechnicalErrorCode;
+  schemaFailure?: SemanticSchemaFailureDiagnostic;
 }

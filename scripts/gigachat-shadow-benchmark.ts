@@ -32,7 +32,7 @@ async function main() {
     stabilityRuns: 3
   });
   const artifactPath = path.join("tmp", `gigachat-shadow-benchmark-${timestamp()}.jsonl`);
-  await writeBenchmarkJsonl(artifactPath, benchmark.results);
+  await writeBenchmarkJsonl(artifactPath, [...benchmark.results, ...benchmark.stabilityRuns]);
 
   console.log(
     JSON.stringify(

@@ -56,18 +56,38 @@ describe("pilot semantic benchmark", () => {
       ]
     };
     const provider = new FakeSemanticModelProvider((request: SemanticModelRequest) => semanticResponse("PASS", request));
-    const { results } = await runPilotBenchmark({ provider, cases: [testCase], stabilityCaseCount: 0 });
+    const { results, stabilityRuns } = await runPilotBenchmark({ provider, cases: [testCase], stabilityCaseCount: 0 });
     const artifactDir = path.join(process.cwd(), "tmp", "benchmark-tests");
     const artifactPath = path.join(artifactDir, "artifact.jsonl");
     await mkdir(artifactDir, { recursive: true });
 
-    await writeBenchmarkJsonl(artifactPath, results);
+    await writeBenchmarkJsonl(artifactPath, [...results, ...stabilityRuns]);
     const artifact = await readFile(artifactPath, "utf8");
 
     expect(artifact).toContain(testCase.caseId);
     expect(artifact).not.toContain("synthetic-secret-token");
     expect(artifact).not.toContain("GIGACHAT_AUTH_KEY");
     expect(artifact).not.toContain("access_token");
+  });
+
+  it("persists stability run rows in the benchmark artifact", async () => {
+    const cases = PILOT_BENCHMARK_CASES.slice(0, 2);
+    const provider = new FakeSemanticModelProvider((request: SemanticModelRequest) => semanticResponse("PASS", request));
+    const benchmark = await runPilotBenchmark({ provider, cases, stabilityCaseCount: 2, stabilityRuns: 3 });
+    const artifactDir = path.join(process.cwd(), "tmp", "benchmark-tests");
+    const artifactPath = path.join(artifactDir, "stability.jsonl");
+
+    await writeBenchmarkJsonl(artifactPath, [...benchmark.results, ...benchmark.stabilityRuns]);
+    const artifactRows = (await readFile(artifactPath, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+
+    expect(benchmark.stabilityRuns).toHaveLength(6);
+    expect(artifactRows.filter((row) => row.benchmark_phase === "stability")).toHaveLength(6);
+    expect(artifactRows.filter((row) => row.benchmark_phase === "stability").map((row) => row.stability_run)).toEqual([
+      1, 2, 3, 1, 2, 3
+    ]);
   });
 
   it("calculates metrics and separates technical NO_EVALUATION from semantic MANUAL_CHECK", () => {
@@ -117,6 +137,7 @@ function row(
     reason_code: actual === "NO_EVALUATION" ? null : `${actual}_SYNTHETIC`,
     evidence_refs: actual === "NO_EVALUATION" ? [] : ["consent_text:1"],
     duration_ms: 100,
-    technical_error_code: technicalErrorCode
+    technical_error_code: technicalErrorCode,
+    schema_failure: null
   };
 }

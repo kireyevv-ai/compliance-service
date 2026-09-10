@@ -95,6 +95,85 @@ describe("generic semantic evaluator", () => {
     });
   });
 
+  it("adds safe schema failure diagnostics without raw reason or evidence text", async () => {
+    const result = await evaluateSemanticRule(input, {
+      provider: new FakeSemanticModelProvider({
+        status: "MAYBE",
+        confidence: "high",
+        reason: "raw reason should stay out of diagnostics",
+        evidence_refs: ["ev:consent-text:1"],
+        extra_field: "unexpected"
+      })
+    });
+
+    expect(result).toMatchObject({
+      status: "NO_EVALUATION",
+      technicalErrorCode: "SCHEMA_VALIDATION_FAILED",
+      schemaFailure: {
+        jsonParseSuccess: true,
+        presentFields: ["confidence", "evidence_refs", "extra_field", "reason", "status"],
+        unexpectedFields: ["extra_field"]
+      }
+    });
+    if (result.status !== "NO_EVALUATION") {
+      throw new Error("Expected NO_EVALUATION");
+    }
+    expect(result.schemaFailure?.kind).toMatch(/EXTRA_FIELD|TYPE_MISMATCH|ENUM_MISMATCH/);
+    expect(JSON.stringify(result.schemaFailure)).not.toContain("raw reason should stay out");
+    expect(JSON.stringify(result.schemaFailure)).not.toContain(input.evidence[0].excerpt);
+  });
+
+  it("classifies missing field, enum mismatch, type mismatch, and JSON parse failures", async () => {
+    const missing = await evaluateSemanticRule(input, {
+      provider: new FakeSemanticModelProvider({
+        status: "PASS",
+        confidence: 0.8,
+        reason: "Missing reason_code.",
+        evidence_refs: ["ev:consent-text:1"]
+      })
+    });
+    const enumMismatch = await evaluateSemanticRule(input, {
+      provider: new FakeSemanticModelProvider({
+        ...response("PASS"),
+        status: "MAYBE"
+      })
+    });
+    const typeMismatch = await evaluateSemanticRule(input, {
+      provider: new FakeSemanticModelProvider({
+        ...response("PASS"),
+        confidence: "0.8"
+      })
+    });
+    const parseFailed = await evaluateSemanticRule(input, {
+      provider: new FakeSemanticModelProvider("{not valid json")
+    });
+
+    expect(missing.status).toBe("NO_EVALUATION");
+    if (missing.status !== "NO_EVALUATION") {
+      throw new Error("Expected missing-field case to return NO_EVALUATION");
+    }
+    expect(missing.schemaFailure?.kind).toBe("MISSING_FIELD");
+    expect(missing.schemaFailure?.missingRequiredFields).toEqual(["reason_code"]);
+    expect(enumMismatch.status).toBe("NO_EVALUATION");
+    if (enumMismatch.status !== "NO_EVALUATION") {
+      throw new Error("Expected enum mismatch case to return NO_EVALUATION");
+    }
+    expect(enumMismatch.schemaFailure?.kind).toBe("ENUM_MISMATCH");
+    expect(enumMismatch.schemaFailure?.field).toBe("status");
+    expect(typeMismatch.status).toBe("NO_EVALUATION");
+    if (typeMismatch.status !== "NO_EVALUATION") {
+      throw new Error("Expected type mismatch case to return NO_EVALUATION");
+    }
+    expect(typeMismatch.schemaFailure?.kind).toBe("TYPE_MISMATCH");
+    expect(typeMismatch.schemaFailure?.field).toBe("confidence");
+    expect(parseFailed.status).toBe("NO_EVALUATION");
+    if (parseFailed.status !== "NO_EVALUATION") {
+      throw new Error("Expected parse failure case to return NO_EVALUATION");
+    }
+    expect(parseFailed.schemaFailure?.kind).toBe("JSON_PARSE_FAILED");
+    expect(parseFailed.schemaFailure?.jsonParseSuccess).toBe(false);
+  });
+
   it("separates structurally valid responses with invented evidence refs from schema failures", async () => {
     const result = await evaluateSemanticRule(input, {
       provider: new FakeSemanticModelProvider({
