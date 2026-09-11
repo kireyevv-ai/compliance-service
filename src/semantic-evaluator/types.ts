@@ -4,6 +4,13 @@ import type { Fact } from "@/facts/types";
 export const SEMANTIC_EVALUATION_STATUSES = ["PASS", "FAIL", "MANUAL_CHECK"] as const;
 export type SemanticEvaluationStatus = (typeof SEMANTIC_EVALUATION_STATUSES)[number];
 
+export const SEMANTIC_OUTPUT_LIMITS = {
+  confidence: { minimum: 0, maximum: 1 },
+  reasonCode: { minLength: 1, maxLength: 80 },
+  reason: { minLength: 1, maxLength: 1_000 },
+  evidenceRef: { minLength: 1 }
+} as const;
+
 export type SemanticTechnicalErrorCode =
   | "PROVIDER_TIMEOUT"
   | "PROVIDER_ERROR"
@@ -18,6 +25,7 @@ export type SemanticSchemaFailureKind =
   | "TYPE_MISMATCH"
   | "ENUM_MISMATCH"
   | "JSON_PARSE_FAILED"
+  | "CONSTRAINT_VIOLATION"
   | "OTHER_SCHEMA_FAILURE";
 
 export interface SemanticSchemaFailureDiagnostic {
@@ -31,6 +39,8 @@ export interface SemanticSchemaFailureDiagnostic {
   actualType?: string;
   enumExpected?: string[];
   enumActual?: string;
+  constraint?: string;
+  limit?: number;
 }
 
 export interface SemanticEvidenceExcerpt {

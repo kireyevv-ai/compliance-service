@@ -4,6 +4,7 @@ import type { Rule } from "@/rule-engine/types";
 import { evaluateRulesForScan } from "@/rule-engine/evaluator";
 import { evaluateSemanticRule, SEMANTIC_EVALUATOR_INSTRUCTIONS } from "@/semantic-evaluator/evaluator";
 import { FakeSemanticModelProvider } from "@/semantic-evaluator/fake-provider";
+import { SEMANTIC_OUTPUT_LIMITS } from "@/semantic-evaluator/types";
 import type { SemanticEvaluationInput, SemanticModelProvider } from "@/semantic-evaluator/types";
 
 const input: SemanticEvaluationInput = {
@@ -172,6 +173,32 @@ describe("generic semantic evaluator", () => {
     }
     expect(parseFailed.schemaFailure?.kind).toBe("JSON_PARSE_FAILED");
     expect(parseFailed.schemaFailure?.jsonParseSuccess).toBe(false);
+  });
+
+  it("rejects overlong reason_code as a constraint violation without silent truncation", async () => {
+    const overlongReasonCode = "X".repeat(SEMANTIC_OUTPUT_LIMITS.reasonCode.maxLength + 1);
+    const result = await evaluateSemanticRule(input, {
+      provider: new FakeSemanticModelProvider({
+        ...response("PASS"),
+        reason_code: overlongReasonCode
+      })
+    });
+
+    expect(result).toMatchObject({
+      status: "NO_EVALUATION",
+      technicalErrorCode: "SCHEMA_VALIDATION_FAILED",
+      schemaFailure: {
+        kind: "CONSTRAINT_VIOLATION",
+        field: "reason_code",
+        actualType: "string",
+        constraint: "max",
+        limit: SEMANTIC_OUTPUT_LIMITS.reasonCode.maxLength
+      }
+    });
+    if (result.status !== "NO_EVALUATION") {
+      throw new Error("Expected overlong reason_code to return NO_EVALUATION");
+    }
+    expect(JSON.stringify(result.schemaFailure)).not.toContain(overlongReasonCode);
   });
 
   it("separates structurally valid responses with invented evidence refs from schema failures", async () => {

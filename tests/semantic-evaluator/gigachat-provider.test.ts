@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { GigaChatSemanticModelProvider } from "@/semantic-evaluator/providers/gigachat";
+import { SEMANTIC_OUTPUT_LIMITS } from "@/semantic-evaluator/types";
 import type { SemanticModelRequest } from "@/semantic-evaluator/types";
 
 const request: SemanticModelRequest = {
@@ -213,6 +214,71 @@ describe("GigaChat semantic provider", () => {
     expect(chatBody).not.toContain("privacy_policy_text:evidence-1");
   });
 
+  it("keeps provider structured schema aligned with the generic semantic contract limits", async () => {
+    let schema: {
+      properties?: {
+        confidence?: { minimum?: number; maximum?: number };
+        reason_code?: { minLength?: number; maxLength?: number };
+        reason?: { minLength?: number; maxLength?: number };
+        evidence_refs?: { items?: { minLength?: number; enum?: string[] } };
+      };
+    } = {};
+    const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
+      if (String(url).includes("/oauth")) {
+        return oauthResponse(9_999_999_999_999);
+      }
+      const body = JSON.parse(String(init?.body ?? "{}"));
+      schema = body.response_format.schema;
+      return chatResponse("PASS");
+    }) as typeof fetch;
+
+    await provider(fetchImpl).evaluate(request);
+
+    expect(schema.properties?.confidence).toMatchObject(SEMANTIC_OUTPUT_LIMITS.confidence);
+    expect(schema.properties?.reason_code).toMatchObject({
+      minLength: SEMANTIC_OUTPUT_LIMITS.reasonCode.minLength,
+      maxLength: SEMANTIC_OUTPUT_LIMITS.reasonCode.maxLength
+    });
+    expect(schema.properties?.reason).toMatchObject({
+      minLength: SEMANTIC_OUTPUT_LIMITS.reason.minLength,
+      maxLength: SEMANTIC_OUTPUT_LIMITS.reason.maxLength
+    });
+    expect(schema.properties?.evidence_refs?.items).toMatchObject({
+      minLength: SEMANTIC_OUTPUT_LIMITS.evidenceRef.minLength,
+      enum: ["E1"]
+    });
+  });
+
+  it("does not silently truncate overlong reason_code returned by the provider", async () => {
+    const overlongReasonCode = "X".repeat(SEMANTIC_OUTPUT_LIMITS.reasonCode.maxLength + 1);
+    const fetchImpl = (async (url: string | URL | Request) => {
+      if (String(url).includes("/oauth")) {
+        return oauthResponse(9_999_999_999_999);
+      }
+      return jsonResponse({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                status: "PASS",
+                confidence: 0.9,
+                reason_code: overlongReasonCode,
+                reason: "Synthetic structured response.",
+                evidence_refs: ["E1"]
+              })
+            }
+          }
+        ]
+      });
+    }) as typeof fetch;
+
+    const result = await provider(fetchImpl).evaluate(request);
+
+    expect(result).toMatchObject({
+      reason_code: overlongReasonCode
+    });
+  });
+
   it("applies custom semantic LLM timeout to provider requests", async () => {
     const previousTimeout = process.env.SEMANTIC_LLM_TIMEOUT_MS;
     process.env.SEMANTIC_LLM_TIMEOUT_MS = "5";
@@ -339,6 +405,7 @@ describe("GigaChat semantic provider", () => {
 
     expect(schema.properties?.evidence_refs?.items).toEqual({
       type: "string",
+      minLength: SEMANTIC_OUTPUT_LIMITS.evidenceRef.minLength,
       enum: ["E1"]
     });
   });

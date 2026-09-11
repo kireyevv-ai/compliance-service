@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { SEMANTIC_EVALUATION_STATUSES, SEMANTIC_OUTPUT_LIMITS } from "../types";
 import type { SemanticEvidenceExcerpt, SemanticModelProvider, SemanticModelRequest } from "../types";
 
 type Fetch = typeof fetch;
@@ -199,22 +200,29 @@ function semanticResponseSchema(aliases: string[]) {
     properties: {
       status: {
         type: "string",
-        enum: ["PASS", "FAIL", "MANUAL_CHECK"]
+        enum: SEMANTIC_EVALUATION_STATUSES
       },
       confidence: {
         type: "number",
-        minimum: 0,
-        maximum: 1
+        minimum: SEMANTIC_OUTPUT_LIMITS.confidence.minimum,
+        maximum: SEMANTIC_OUTPUT_LIMITS.confidence.maximum
       },
       reason_code: {
-        type: "string"
+        type: "string",
+        minLength: SEMANTIC_OUTPUT_LIMITS.reasonCode.minLength,
+        maxLength: SEMANTIC_OUTPUT_LIMITS.reasonCode.maxLength
       },
       reason: {
-        type: "string"
+        type: "string",
+        minLength: SEMANTIC_OUTPUT_LIMITS.reason.minLength,
+        maxLength: SEMANTIC_OUTPUT_LIMITS.reason.maxLength
       },
       evidence_refs: {
         type: "array",
-        items: aliases.length > 0 ? { type: "string", enum: aliases } : { type: "string" }
+        items:
+          aliases.length > 0
+            ? { type: "string", minLength: SEMANTIC_OUTPUT_LIMITS.evidenceRef.minLength, enum: aliases }
+            : { type: "string", minLength: SEMANTIC_OUTPUT_LIMITS.evidenceRef.minLength }
       }
     },
     required: ["status", "confidence", "reason_code", "reason", "evidence_refs"],

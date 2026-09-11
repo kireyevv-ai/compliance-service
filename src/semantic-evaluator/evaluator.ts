@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  SEMANTIC_OUTPUT_LIMITS,
   SEMANTIC_EVALUATION_STATUSES,
   type SemanticEvaluation,
   type SemanticEvaluationDiagnostic,
@@ -32,10 +33,10 @@ export interface EvaluateSemanticRuleOptions {
 const providerResponseSchema = z
   .object({
     status: z.enum(SEMANTIC_EVALUATION_STATUSES),
-    confidence: z.number().min(0).max(1),
-    reason_code: z.string().min(1).max(80),
-    reason: z.string().min(1).max(1_000),
-    evidence_refs: z.array(z.string().min(1))
+    confidence: z.number().min(SEMANTIC_OUTPUT_LIMITS.confidence.minimum).max(SEMANTIC_OUTPUT_LIMITS.confidence.maximum),
+    reason_code: z.string().min(SEMANTIC_OUTPUT_LIMITS.reasonCode.minLength).max(SEMANTIC_OUTPUT_LIMITS.reasonCode.maxLength),
+    reason: z.string().min(SEMANTIC_OUTPUT_LIMITS.reason.minLength).max(SEMANTIC_OUTPUT_LIMITS.reason.maxLength),
+    evidence_refs: z.array(z.string().min(SEMANTIC_OUTPUT_LIMITS.evidenceRef.minLength))
   })
   .strict();
 
@@ -185,6 +186,8 @@ function schemaFailureDiagnostic(value: unknown, issues: z.ZodIssue[]): Semantic
   let actualType: string | undefined;
   let enumExpected: string[] | undefined;
   let enumActual: string | undefined;
+  let constraint: string | undefined;
+  let limit: number | undefined;
   let kind: SemanticSchemaFailureKind = "OTHER_SCHEMA_FAILURE";
 
   for (const issue of issues) {
@@ -212,6 +215,17 @@ function schemaFailureDiagnostic(value: unknown, issues: z.ZodIssue[]): Semantic
         field = path;
         expectedType = expected;
         actualType = currentActualType;
+      }
+      continue;
+    }
+
+    if (code === "too_big" || code === "too_small") {
+      if (kind === "OTHER_SCHEMA_FAILURE" || kind === "EXTRA_FIELD") {
+        kind = "CONSTRAINT_VIOLATION";
+        field = path;
+        actualType = actualTypeAtPath(value, issue.path);
+        constraint = code === "too_big" ? "max" : "min";
+        limit = numericIssueLimit(issue);
       }
       continue;
     }
@@ -245,7 +259,9 @@ function schemaFailureDiagnostic(value: unknown, issues: z.ZodIssue[]): Semantic
     expectedType,
     actualType,
     enumExpected,
-    enumActual
+    enumActual,
+    constraint,
+    limit
   };
 }
 
@@ -289,6 +305,12 @@ function enumValues(issue: z.ZodIssue): string[] | undefined {
     return undefined;
   }
   return values.filter((value): value is string => typeof value === "string");
+}
+
+function numericIssueLimit(issue: z.ZodIssue): number | undefined {
+  const data = issue as z.ZodIssue & { maximum?: unknown; minimum?: unknown };
+  const value = data.maximum ?? data.minimum;
+  return typeof value === "number" ? value : undefined;
 }
 
 function unique(values: string[]): string[] {
