@@ -1,7 +1,7 @@
 import { z } from "zod";
 import {
   SEMANTIC_OUTPUT_LIMITS,
-  SEMANTIC_EVALUATION_STATUSES,
+  SEMANTIC_OBSERVATIONS,
   type SemanticEvaluation,
   type SemanticEvaluationDiagnostic,
   type SemanticEvaluationInput,
@@ -19,10 +19,13 @@ export const SEMANTIC_EVALUATOR_INSTRUCTIONS = [
   "Use only the supplied Evidence excerpts and minimal context.",
   "Do not infer facts that are not present in the supplied Evidence.",
   "Do not apply legal knowledge outside the supplied criterion.",
-  "Choose MANUAL_CHECK when the Evidence is ambiguous or insufficient.",
-  "For rules checking whether a required element is present: COMPLETE Evidence with the required element absent may support FAIL; PARTIAL, TRUNCATED, or UNKNOWN Evidence with the required element absent should be MANUAL_CHECK when absence cannot be proven from the supplied Evidence.",
-  "Explicit positive evidence may support PASS even when Evidence is PARTIAL, if the required element is fully shown in the supplied text.",
-  "A reference-only statement such as 'see below', 'provided later', or 'described in another section' does not by itself prove the required content is present; return MANUAL_CHECK when the actual required content is not supplied.",
+  "Return only whether the required element is PRESENT, ABSENT, or AMBIGUOUS in the supplied Evidence.",
+  "PRESENT means the required element is explicitly shown in the supplied Evidence.",
+  "ABSENT means the required element is not found or is explicitly absent from the supplied Evidence.",
+  "AMBIGUOUS means the supplied Evidence does not allow a reliable presence/absence observation.",
+  "Do not decide PASS, FAIL, or MANUAL_CHECK; compliance verdict mapping is handled by deterministic application logic.",
+  "Evidence completeness is context only for the observation. Do not convert ABSENT plus PARTIAL, TRUNCATED, or UNKNOWN Evidence into MANUAL_CHECK yourself.",
+  "A reference-only statement such as 'see below', 'provided later', or 'described in another section' does not by itself prove the required content is PRESENT.",
   "Return evidence_refs using only refs from the supplied Evidence.",
   "Do not generate legal basis, law text, severity, remediation, rule applicability, or chain-of-thought."
 ].join("\n");
@@ -35,7 +38,7 @@ export interface EvaluateSemanticRuleOptions {
 
 const providerResponseSchema = z
   .object({
-    status: z.enum(SEMANTIC_EVALUATION_STATUSES),
+    observation: z.enum(SEMANTIC_OBSERVATIONS),
     confidence: z.number().min(SEMANTIC_OUTPUT_LIMITS.confidence.minimum).max(SEMANTIC_OUTPUT_LIMITS.confidence.maximum),
     reason_code: z.string().min(SEMANTIC_OUTPUT_LIMITS.reasonCode.minLength).max(SEMANTIC_OUTPUT_LIMITS.reasonCode.maxLength),
     reason: z.string().min(SEMANTIC_OUTPUT_LIMITS.reason.minLength).max(SEMANTIC_OUTPUT_LIMITS.reason.maxLength),
@@ -88,7 +91,8 @@ export async function evaluateSemanticRule(
     }
 
     const result: SemanticEvaluation = {
-      status: validation.data.status,
+      status: mapObservationToStatus(validation.data.observation, input),
+      observation: validation.data.observation,
       confidence: validation.data.confidence,
       reasonCode: validation.data.reason_code,
       reason: validation.data.reason,
@@ -105,6 +109,36 @@ export async function evaluateSemanticRule(
     emitDiagnostic(options, input.ruleId, startedAt, timeout ? "timeout" : "error", result);
     return result;
   }
+}
+
+export function mapObservationToStatus(
+  observation: SemanticEvaluation["observation"],
+  input: Pick<SemanticEvaluationInput, "evidence">
+): SemanticEvaluation["status"] {
+  if (observation === "PRESENT") {
+    return hasOnlyReferenceOnlyEvidence(input.evidence) ? "MANUAL_CHECK" : "PASS";
+  }
+
+  if (observation === "AMBIGUOUS") {
+    return "MANUAL_CHECK";
+  }
+
+  return input.evidence.length > 0 && input.evidence.every((item) => item.completeness === "COMPLETE")
+    ? "FAIL"
+    : "MANUAL_CHECK";
+}
+
+function hasOnlyReferenceOnlyEvidence(evidence: SemanticEvaluationInput["evidence"]): boolean {
+  return evidence.length > 0 && evidence.every((item) => isReferenceOnlyText(item.excerpt));
+}
+
+function isReferenceOnlyText(text: string): boolean {
+  const normalized = text.toLowerCase();
+  return [
+    /см\.?\s+(далее|ниже|выше)/,
+    /(приведен|приведён|указан|описан|размещен|размещён|опубликован)\s+(далее|ниже|выше|в\s+другом|в\s+отдельном|по\s+ссылке)/,
+    /(see|described|provided|available)\s+(below|later|above|in another|in a separate|by link)/
+  ].some((pattern) => pattern.test(normalized));
 }
 
 function toProviderRequest(input: SemanticEvaluationInput): SemanticModelRequest {

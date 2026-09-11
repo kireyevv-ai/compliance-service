@@ -4,6 +4,9 @@ import type { Fact } from "@/facts/types";
 export const SEMANTIC_EVALUATION_STATUSES = ["PASS", "FAIL", "MANUAL_CHECK"] as const;
 export type SemanticEvaluationStatus = (typeof SEMANTIC_EVALUATION_STATUSES)[number];
 
+export const SEMANTIC_OBSERVATIONS = ["PRESENT", "ABSENT", "AMBIGUOUS"] as const;
+export type SemanticObservation = (typeof SEMANTIC_OBSERVATIONS)[number];
+
 export const SEMANTIC_OUTPUT_LIMITS = {
   confidence: { minimum: 0, maximum: 1 },
   reasonCode: { minLength: 1, maxLength: 80 },
@@ -81,6 +84,7 @@ export interface SemanticModelProvider {
 
 export interface SemanticEvaluation {
   status: SemanticEvaluationStatus;
+  observation: SemanticObservation;
   confidence: number;
   reasonCode: string;
   reason: string;

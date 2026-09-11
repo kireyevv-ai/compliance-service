@@ -7,18 +7,22 @@ import type {
   SemanticEvaluation,
   SemanticEvaluationResult,
   SemanticEvaluationStatus,
+  SemanticObservation,
   SemanticModelProvider,
   SemanticSchemaFailureDiagnostic
 } from "./types";
 
 export type BenchmarkActualStatus = SemanticEvaluationStatus | "NO_EVALUATION";
+export type BenchmarkActualObservation = SemanticObservation | "NO_EVALUATION";
 
 export interface BenchmarkResultRow {
   benchmark_phase?: "main";
   case_id: string;
   rule_id: string;
   expected: SemanticEvaluationStatus;
+  expected_observation: SemanticObservation;
   actual: BenchmarkActualStatus;
+  semantic_observation: BenchmarkActualObservation;
   confidence: number | null;
   reason_code: string | null;
   evidence_refs: string[];
@@ -38,6 +42,8 @@ export interface BenchmarkMetrics {
   total_cases: number;
   evaluated_cases: number;
   technical_no_evaluation: number;
+  observation_accuracy: number;
+  observation_confusion_matrix: Record<SemanticObservation, Record<BenchmarkActualObservation, number>>;
   exact_verdict_accuracy: number;
   false_pass: number;
   false_fail: number;
@@ -50,7 +56,9 @@ export interface BenchmarkMetrics {
 export interface StabilityResult {
   case_id: string;
   rule_id: string;
+  observations: BenchmarkActualObservation[];
   verdicts: BenchmarkActualStatus[];
+  observation_stable: boolean;
   stable: boolean;
   confidence_min: number | null;
   confidence_max: number | null;
@@ -74,6 +82,8 @@ export interface RunBenchmarkOptions {
 
 const STATUSES: SemanticEvaluationStatus[] = ["PASS", "FAIL", "MANUAL_CHECK"];
 const ACTUAL_STATUSES: BenchmarkActualStatus[] = ["PASS", "FAIL", "MANUAL_CHECK", "NO_EVALUATION"];
+const OBSERVATIONS: SemanticObservation[] = ["PRESENT", "ABSENT", "AMBIGUOUS"];
+const ACTUAL_OBSERVATIONS: BenchmarkActualObservation[] = ["PRESENT", "ABSENT", "AMBIGUOUS", "NO_EVALUATION"];
 
 export async function runPilotBenchmark(options: RunBenchmarkOptions): Promise<BenchmarkRunResult> {
   const cases = options.cases ?? PILOT_BENCHMARK_CASES;
@@ -108,12 +118,15 @@ export async function writeBenchmarkJsonl(filePath: string, rows: BenchmarkArtif
 export function calculateBenchmarkMetrics(rows: BenchmarkResultRow[]): BenchmarkMetrics {
   const evaluated = rows.filter((row) => row.actual !== "NO_EVALUATION");
   const exact = evaluated.filter((row) => row.actual === row.expected).length;
+  const exactObservation = evaluated.filter((row) => row.semantic_observation === row.expected_observation).length;
   const confidences = evaluated.map((row) => row.confidence).filter((value): value is number => typeof value === "number");
 
   return {
     total_cases: rows.length,
     evaluated_cases: evaluated.length,
     technical_no_evaluation: rows.length - evaluated.length,
+    observation_accuracy: evaluated.length > 0 ? exactObservation / evaluated.length : 0,
+    observation_confusion_matrix: observationConfusionMatrix(rows),
     exact_verdict_accuracy: evaluated.length > 0 ? exact / evaluated.length : 0,
     false_pass: rows.filter((row) => row.actual === "PASS" && row.expected !== "PASS").length,
     false_fail: rows.filter((row) => row.actual === "FAIL" && row.expected !== "FAIL").length,
@@ -143,7 +156,9 @@ async function evaluateCase(
     case_id: testCase.caseId,
     rule_id: testCase.ruleId,
     expected: testCase.expected,
+    expected_observation: testCase.expectedObservation,
     actual: guarded.status,
+    semantic_observation: guarded.status === "NO_EVALUATION" ? "NO_EVALUATION" : guarded.observation,
     confidence: guarded.status === "NO_EVALUATION" ? null : guarded.confidence,
     reason_code: guarded.status === "NO_EVALUATION" ? null : guarded.reasonCode,
     evidence_refs: guarded.status === "NO_EVALUATION" ? [] : guarded.evidenceRefs,
@@ -163,6 +178,7 @@ function applyTruncatedPolicyGuard(result: SemanticEvaluationResult, testCase: P
 
   const guarded: SemanticEvaluation = {
     status: "MANUAL_CHECK",
+    observation: result.observation,
     confidence: Math.min(result.confidence, 0.5),
     reasonCode: "TRUNCATED_POLICY_REQUIRES_MANUAL_CHECK",
     reason: "Policy evidence was truncated, so benchmark shadow mode cannot produce an absence-based FAIL.",
@@ -178,10 +194,22 @@ function countActual(rows: BenchmarkResultRow[]): Record<BenchmarkActualStatus, 
   >;
 }
 
+function countActualObservations(rows: BenchmarkResultRow[]): Record<BenchmarkActualObservation, number> {
+  return Object.fromEntries(
+    ACTUAL_OBSERVATIONS.map((observation) => [observation, rows.filter((row) => row.semantic_observation === observation).length])
+  ) as Record<BenchmarkActualObservation, number>;
+}
+
 function confusionMatrix(rows: BenchmarkResultRow[]): Record<SemanticEvaluationStatus, Record<BenchmarkActualStatus, number>> {
   return Object.fromEntries(
     STATUSES.map((expected) => [expected, countActual(rows.filter((row) => row.expected === expected))])
   ) as Record<SemanticEvaluationStatus, Record<BenchmarkActualStatus, number>>;
+}
+
+function observationConfusionMatrix(rows: BenchmarkResultRow[]): Record<SemanticObservation, Record<BenchmarkActualObservation, number>> {
+  return Object.fromEntries(
+    OBSERVATIONS.map((expected) => [expected, countActualObservations(rows.filter((row) => row.expected_observation === expected))])
+  ) as Record<SemanticObservation, Record<BenchmarkActualObservation, number>>;
 }
 
 function latencyByRule(rows: BenchmarkResultRow[]): Record<string, { average_ms: number; median_ms: number }> {
@@ -199,11 +227,14 @@ function latencyByRule(rows: BenchmarkResultRow[]): Record<string, { average_ms:
 
 function stabilityFor(testCase: PilotBenchmarkCase, rows: BenchmarkResultRow[]): StabilityResult {
   const verdicts = rows.map((row) => row.actual);
+  const observations = rows.map((row) => row.semantic_observation);
   const confidences = rows.map((row) => row.confidence).filter((value): value is number => typeof value === "number");
   return {
     case_id: testCase.caseId,
     rule_id: testCase.ruleId,
+    observations,
     verdicts,
+    observation_stable: new Set(observations).size === 1,
     stable: new Set(verdicts).size === 1,
     confidence_min: confidences.length > 0 ? Math.min(...confidences) : null,
     confidence_max: confidences.length > 0 ? Math.max(...confidences) : null,

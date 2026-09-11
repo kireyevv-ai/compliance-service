@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Scan } from "@/db/schema";
 import type { Rule } from "@/rule-engine/types";
 import { evaluateRulesForScan } from "@/rule-engine/evaluator";
-import { evaluateSemanticRule, SEMANTIC_EVALUATOR_INSTRUCTIONS } from "@/semantic-evaluator/evaluator";
+import { evaluateSemanticRule, mapObservationToStatus, SEMANTIC_EVALUATOR_INSTRUCTIONS } from "@/semantic-evaluator/evaluator";
 import { FakeSemanticModelProvider } from "@/semantic-evaluator/fake-provider";
 import { SEMANTIC_OUTPUT_LIMITS } from "@/semantic-evaluator/types";
 import type { SemanticEvaluationInput, SemanticModelProvider } from "@/semantic-evaluator/types";
@@ -24,26 +24,31 @@ const input: SemanticEvaluationInput = {
   context: { siteType: "B2B" }
 };
 
-function response(status: "PASS" | "FAIL" | "MANUAL_CHECK", confidence = 0.8) {
+function response(observation: "PRESENT" | "ABSENT" | "AMBIGUOUS", confidence = 0.8) {
   return {
-    status,
+    observation,
     confidence,
-    reason_code: `${status}_SYNTHETIC`,
+    reason_code: `${observation}_SYNTHETIC`,
     reason: "Synthetic semantic result.",
     evidence_refs: ["ev:consent-text:1"]
   };
 }
 
+function withCompleteness(completeness: SemanticEvaluationInput["evidence"][number]["completeness"]): SemanticEvaluationInput {
+  return { ...input, evidence: [{ ...input.evidence[0], completeness }] };
+}
+
 describe("generic semantic evaluator", () => {
-  it("accepts a valid PASS response", async () => {
-    const provider = new FakeSemanticModelProvider(response("PASS", 0.91));
+  it("accepts a valid PRESENT response and maps it to PASS", async () => {
+    const provider = new FakeSemanticModelProvider(response("PRESENT", 0.91));
 
     const result = await evaluateSemanticRule(input, { provider });
 
     expect(result).toMatchObject({
       status: "PASS",
+      observation: "PRESENT",
       confidence: 0.91,
-      reasonCode: "PASS_SYNTHETIC",
+      reasonCode: "PRESENT_SYNTHETIC",
       evidenceRefs: ["ev:consent-text:1"]
     });
     expect(provider.requests[0]).toMatchObject({
@@ -54,25 +59,67 @@ describe("generic semantic evaluator", () => {
     });
   });
 
-  it("accepts a valid FAIL response", async () => {
+  it("accepts a valid ABSENT response and maps COMPLETE evidence to FAIL", async () => {
     const result = await evaluateSemanticRule(input, {
-      provider: new FakeSemanticModelProvider(response("FAIL", 0.75))
+      provider: new FakeSemanticModelProvider(response("ABSENT", 0.75))
     });
 
-    expect(result).toMatchObject({ status: "FAIL", confidence: 0.75 });
+    expect(result).toMatchObject({ status: "FAIL", observation: "ABSENT", confidence: 0.75 });
   });
 
-  it("accepts a valid MANUAL_CHECK response", async () => {
+  it("accepts a valid AMBIGUOUS response and maps it to MANUAL_CHECK", async () => {
     const result = await evaluateSemanticRule(input, {
-      provider: new FakeSemanticModelProvider(response("MANUAL_CHECK", 0.52))
+      provider: new FakeSemanticModelProvider(response("AMBIGUOUS", 0.52))
     });
 
-    expect(result).toMatchObject({ status: "MANUAL_CHECK", confidence: 0.52 });
+    expect(result).toMatchObject({ status: "MANUAL_CHECK", observation: "AMBIGUOUS", confidence: 0.52 });
+  });
+
+  it("maps PRESENT with COMPLETE evidence to PASS", () => {
+    expect(mapObservationToStatus("PRESENT", input)).toBe("PASS");
+  });
+
+  it("maps PRESENT with PARTIAL evidence to PASS", () => {
+    expect(mapObservationToStatus("PRESENT", withCompleteness("PARTIAL"))).toBe("PASS");
+  });
+
+  it("maps ABSENT with COMPLETE evidence to FAIL", () => {
+    expect(mapObservationToStatus("ABSENT", input)).toBe("FAIL");
+  });
+
+  it("maps ABSENT with PARTIAL evidence to MANUAL_CHECK", () => {
+    expect(mapObservationToStatus("ABSENT", withCompleteness("PARTIAL"))).toBe("MANUAL_CHECK");
+  });
+
+  it("maps ABSENT with TRUNCATED evidence to MANUAL_CHECK", () => {
+    expect(mapObservationToStatus("ABSENT", withCompleteness("TRUNCATED"))).toBe("MANUAL_CHECK");
+  });
+
+  it("maps ABSENT with UNKNOWN evidence to MANUAL_CHECK", () => {
+    expect(mapObservationToStatus("ABSENT", withCompleteness("UNKNOWN"))).toBe("MANUAL_CHECK");
+  });
+
+  it("maps AMBIGUOUS with any completeness to MANUAL_CHECK", () => {
+    expect(mapObservationToStatus("AMBIGUOUS", input)).toBe("MANUAL_CHECK");
+    expect(mapObservationToStatus("AMBIGUOUS", withCompleteness("PARTIAL"))).toBe("MANUAL_CHECK");
+  });
+
+  it("does not let reference-only text count as PRESENT", () => {
+    expect(
+      mapObservationToStatus("PRESENT", {
+        evidence: [
+          {
+            ...input.evidence[0],
+            excerpt: "Порядок направления запросов субъектов персональных данных приведен далее."
+          }
+        ]
+      })
+    ).toBe("MANUAL_CHECK");
   });
 
   it("rejects confidence outside 0..1", async () => {
     const result = await evaluateSemanticRule(input, {
-      provider: new FakeSemanticModelProvider(response("PASS", 1.1))
+      provider: new FakeSemanticModelProvider(response("PRESENT", 1.1))
     });
 
     expect(result).toMatchObject({
@@ -84,7 +131,7 @@ describe("generic semantic evaluator", () => {
   it("turns malformed structured objects into SCHEMA_VALIDATION_FAILED", async () => {
     const result = await evaluateSemanticRule(input, {
       provider: new FakeSemanticModelProvider({
-        status: "PASS",
+        observation: "PRESENT",
         confidence: 0.8,
         reason: "Missing reason_code.",
         evidence_refs: ["ev:consent-text:1"]
@@ -100,7 +147,7 @@ describe("generic semantic evaluator", () => {
   it("adds safe schema failure diagnostics without raw reason or evidence text", async () => {
     const result = await evaluateSemanticRule(input, {
       provider: new FakeSemanticModelProvider({
-        status: "MAYBE",
+        observation: "MAYBE",
         confidence: "high",
         reason: "raw reason should stay out of diagnostics",
         evidence_refs: ["ev:consent-text:1"],
@@ -113,7 +160,7 @@ describe("generic semantic evaluator", () => {
       technicalErrorCode: "SCHEMA_VALIDATION_FAILED",
       schemaFailure: {
         jsonParseSuccess: true,
-        presentFields: ["confidence", "evidence_refs", "extra_field", "reason", "status"],
+        presentFields: ["confidence", "evidence_refs", "extra_field", "observation", "reason"],
         unexpectedFields: ["extra_field"]
       }
     });
@@ -128,7 +175,7 @@ describe("generic semantic evaluator", () => {
   it("classifies missing field, enum mismatch, type mismatch, and JSON parse failures", async () => {
     const missing = await evaluateSemanticRule(input, {
       provider: new FakeSemanticModelProvider({
-        status: "PASS",
+        observation: "PRESENT",
         confidence: 0.8,
         reason: "Missing reason_code.",
         evidence_refs: ["ev:consent-text:1"]
@@ -136,13 +183,13 @@ describe("generic semantic evaluator", () => {
     });
     const enumMismatch = await evaluateSemanticRule(input, {
       provider: new FakeSemanticModelProvider({
-        ...response("PASS"),
-        status: "MAYBE"
+        ...response("PRESENT"),
+        observation: "MAYBE"
       })
     });
     const typeMismatch = await evaluateSemanticRule(input, {
       provider: new FakeSemanticModelProvider({
-        ...response("PASS"),
+        ...response("PRESENT"),
         confidence: "0.8"
       })
     });
@@ -161,7 +208,7 @@ describe("generic semantic evaluator", () => {
       throw new Error("Expected enum mismatch case to return NO_EVALUATION");
     }
     expect(enumMismatch.schemaFailure?.kind).toBe("ENUM_MISMATCH");
-    expect(enumMismatch.schemaFailure?.field).toBe("status");
+    expect(enumMismatch.schemaFailure?.field).toBe("observation");
     expect(typeMismatch.status).toBe("NO_EVALUATION");
     if (typeMismatch.status !== "NO_EVALUATION") {
       throw new Error("Expected type mismatch case to return NO_EVALUATION");
@@ -180,7 +227,7 @@ describe("generic semantic evaluator", () => {
     const overlongReasonCode = "X".repeat(SEMANTIC_OUTPUT_LIMITS.reasonCode.maxLength + 1);
     const result = await evaluateSemanticRule(input, {
       provider: new FakeSemanticModelProvider({
-        ...response("PASS"),
+        ...response("PRESENT"),
         reason_code: overlongReasonCode
       })
     });
@@ -205,7 +252,7 @@ describe("generic semantic evaluator", () => {
   it("separates structurally valid responses with invented evidence refs from schema failures", async () => {
     const result = await evaluateSemanticRule(input, {
       provider: new FakeSemanticModelProvider({
-        ...response("PASS"),
+        ...response("PRESENT"),
         evidence_refs: ["ev:consent-text:1", "ev:invented"]
       })
     });
@@ -262,7 +309,7 @@ describe("generic semantic evaluator", () => {
     const diagnostics: unknown[] = [];
 
     await evaluateSemanticRule(input, {
-      provider: new FakeSemanticModelProvider(response("PASS")),
+      provider: new FakeSemanticModelProvider(response("PRESENT")),
       onDiagnostic: (diagnostic) => diagnostics.push(diagnostic)
     });
 

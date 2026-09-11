@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { SEMANTIC_EVALUATION_STATUSES, SEMANTIC_OUTPUT_LIMITS } from "../types";
+import { SEMANTIC_OBSERVATIONS, SEMANTIC_OUTPUT_LIMITS } from "../types";
 import type { SemanticEvidenceExcerpt, SemanticModelProvider, SemanticModelRequest } from "../types";
 
 type Fetch = typeof fetch;
@@ -198,9 +198,9 @@ function semanticResponseSchema(aliases: string[]) {
   return {
     type: "object",
     properties: {
-      status: {
+      observation: {
         type: "string",
-        enum: SEMANTIC_EVALUATION_STATUSES
+        enum: SEMANTIC_OBSERVATIONS
       },
       confidence: {
         type: "number",
@@ -225,7 +225,7 @@ function semanticResponseSchema(aliases: string[]) {
             : { type: "string", minLength: SEMANTIC_OUTPUT_LIMITS.evidenceRef.minLength }
       }
     },
-    required: ["status", "confidence", "reason_code", "reason", "evidence_refs"],
+    required: ["observation", "confidence", "reason_code", "reason", "evidence_refs"],
     additionalProperties: false
   };
 }

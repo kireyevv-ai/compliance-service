@@ -47,15 +47,15 @@ function oauthResponse(expiresAt: number) {
   return jsonResponse({ access_token: `token-${expiresAt}`, expires_at: expiresAt });
 }
 
-function chatResponse(status: "PASS" | "FAIL" | "MANUAL_CHECK" = "PASS") {
+function chatResponse(observation: "PRESENT" | "ABSENT" | "AMBIGUOUS" = "PRESENT") {
   return jsonResponse({
     choices: [
       {
         message: {
           content: JSON.stringify({
-            status,
+            observation,
             confidence: 0.88,
-            reason_code: `${status}_SYNTHETIC`,
+            reason_code: `${observation}_SYNTHETIC`,
             reason: "Synthetic structured response.",
             evidence_refs: ["E1"]
           })
@@ -136,13 +136,13 @@ describe("GigaChat semantic provider", () => {
 
   it("returns parsed structured semantic response", async () => {
     const fetchImpl = (async (url: string | URL | Request) => {
-      return String(url).includes("/oauth") ? oauthResponse(9_999_999_999_999) : chatResponse("FAIL");
+      return String(url).includes("/oauth") ? oauthResponse(9_999_999_999_999) : chatResponse("ABSENT");
     }) as typeof fetch;
 
     const result = await provider(fetchImpl).evaluate(request);
 
     expect(result).toMatchObject({
-      status: "FAIL",
+      observation: "ABSENT",
       confidence: 0.88,
       evidence_refs: ["privacy_policy_text:evidence-1"]
     });
@@ -157,12 +157,12 @@ describe("GigaChat semantic provider", () => {
       }
       return calls.filter((call) => call.includes("/chat/completions")).length === 1
         ? jsonResponse({ error: "rate limited" }, 429)
-        : chatResponse("PASS");
+        : chatResponse("PRESENT");
     }) as typeof fetch;
 
     const result = await provider(fetchImpl).evaluate(request);
 
-    expect(result).toMatchObject({ status: "PASS" });
+    expect(result).toMatchObject({ observation: "PRESENT" });
     expect(calls.filter((url) => url.includes("/chat/completions"))).toHaveLength(2);
   });
 
@@ -175,12 +175,12 @@ describe("GigaChat semantic provider", () => {
       }
       return calls.filter((call) => call.includes("/chat/completions")).length === 1
         ? jsonResponse({ error: "temporary unavailable" }, 503)
-        : chatResponse("PASS");
+        : chatResponse("PRESENT");
     }) as typeof fetch;
 
     const result = await provider(fetchImpl).evaluate(request);
 
-    expect(result).toMatchObject({ status: "PASS" });
+    expect(result).toMatchObject({ observation: "PRESENT" });
     expect(calls.filter((url) => url.includes("/chat/completions"))).toHaveLength(2);
   });
 
@@ -199,7 +199,7 @@ describe("GigaChat semantic provider", () => {
         return oauthResponse(9_999_999_999_999);
       }
       chatBody = String(init?.body ?? "");
-      return chatResponse("MANUAL_CHECK");
+      return chatResponse("AMBIGUOUS");
     }) as typeof fetch;
 
     await provider(fetchImpl).evaluate(request);
@@ -218,6 +218,7 @@ describe("GigaChat semantic provider", () => {
   it("keeps provider structured schema aligned with the generic semantic contract limits", async () => {
     let schema: {
       properties?: {
+        observation?: { enum?: string[] };
         confidence?: { minimum?: number; maximum?: number };
         reason_code?: { minLength?: number; maxLength?: number };
         reason?: { minLength?: number; maxLength?: number };
@@ -230,11 +231,12 @@ describe("GigaChat semantic provider", () => {
       }
       const body = JSON.parse(String(init?.body ?? "{}"));
       schema = body.response_format.schema;
-      return chatResponse("PASS");
+      return chatResponse("PRESENT");
     }) as typeof fetch;
 
     await provider(fetchImpl).evaluate(request);
 
+    expect(schema.properties?.observation?.enum).toEqual(["PRESENT", "ABSENT", "AMBIGUOUS"]);
     expect(schema.properties?.confidence).toMatchObject(SEMANTIC_OUTPUT_LIMITS.confidence);
     expect(schema.properties?.reason_code).toMatchObject({
       minLength: SEMANTIC_OUTPUT_LIMITS.reasonCode.minLength,
@@ -261,7 +263,7 @@ describe("GigaChat semantic provider", () => {
           {
             message: {
               content: JSON.stringify({
-                status: "PASS",
+                observation: "PRESENT",
                 confidence: 0.9,
                 reason_code: overlongReasonCode,
                 reason: "Synthetic structured response.",
@@ -306,13 +308,13 @@ describe("GigaChat semantic provider", () => {
 
   it("maps one model-facing evidence alias back to the internal ref", async () => {
     const fetchImpl = (async (url: string | URL | Request) => {
-      return String(url).includes("/oauth") ? oauthResponse(9_999_999_999_999) : chatResponse("PASS");
+      return String(url).includes("/oauth") ? oauthResponse(9_999_999_999_999) : chatResponse("PRESENT");
     }) as typeof fetch;
 
     const result = await provider(fetchImpl).evaluate(request);
 
     expect(result).toMatchObject({
-      status: "PASS",
+      observation: "PRESENT",
       evidence_refs: ["privacy_policy_text:evidence-1"]
     });
   });
@@ -344,7 +346,7 @@ describe("GigaChat semantic provider", () => {
           {
             message: {
               content: JSON.stringify({
-                status: "PASS",
+                observation: "PRESENT",
                 confidence: 0.9,
                 reason_code: "PASS_SYNTHETIC",
                 reason: "Synthetic structured response.",
@@ -373,7 +375,7 @@ describe("GigaChat semantic provider", () => {
           {
             message: {
               content: JSON.stringify({
-                status: "PASS",
+                observation: "PRESENT",
                 confidence: 0.9,
                 reason_code: "PASS_SYNTHETIC",
                 reason: "Synthetic structured response.",
@@ -400,7 +402,7 @@ describe("GigaChat semantic provider", () => {
       }
       const body = JSON.parse(String(init?.body ?? "{}"));
       schema = body.response_format.schema;
-      return chatResponse("PASS");
+      return chatResponse("PRESENT");
     }) as typeof fetch;
 
     await provider(fetchImpl).evaluate(request);
@@ -419,7 +421,7 @@ describe("GigaChat semantic provider", () => {
         return oauthResponse(9_999_999_999_999);
       }
       chatBody = String(init?.body ?? "");
-      return chatResponse("PASS");
+      return chatResponse("PRESENT");
     }) as typeof fetch;
 
     await provider(fetchImpl).evaluate(request);
@@ -430,3 +432,4 @@ describe("GigaChat semantic provider", () => {
     expect(chatBody).not.toContain('"expectedStatus"');
   });
 });
+

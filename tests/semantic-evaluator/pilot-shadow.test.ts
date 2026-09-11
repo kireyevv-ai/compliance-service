@@ -31,21 +31,21 @@ function goldenProvider() {
     const evidenceRefs = request.evidence.map((item) => item.ref);
 
     if (text.includes("GOLDEN_PASS")) {
-      return semanticResponse("PASS", evidenceRefs);
+      return semanticResponse("PRESENT", evidenceRefs);
     }
 
     if (text.includes("GOLDEN_FAIL")) {
-      return semanticResponse("FAIL", evidenceRefs);
+      return semanticResponse("ABSENT", evidenceRefs);
     }
 
-    return semanticResponse("MANUAL_CHECK", evidenceRefs, "AMBIGUOUS_SYNTHETIC");
+    return semanticResponse("AMBIGUOUS", evidenceRefs, "AMBIGUOUS_SYNTHETIC");
   });
 }
 
-function semanticResponse(status: "PASS" | "FAIL" | "MANUAL_CHECK", evidenceRefs: string[], reasonCode = `${status}_SYNTHETIC`) {
+function semanticResponse(observation: "PRESENT" | "ABSENT" | "AMBIGUOUS", evidenceRefs: string[], reasonCode = `${observation}_SYNTHETIC`) {
   return {
-    status,
-    confidence: status === "MANUAL_CHECK" ? 0.45 : 0.86,
+    observation,
+    confidence: observation === "AMBIGUOUS" ? 0.45 : 0.86,
     reason_code: reasonCode,
     reason: "Synthetic golden semantic result.",
     evidence_refs: evidenceRefs
@@ -152,7 +152,7 @@ describe("pilot semantic rules shadow mode", () => {
   it.each(
     pilotRuleIds.flatMap((ruleId) => [
       [ruleId, "GOLDEN_PASS", "PASS"],
-      [ruleId, "GOLDEN_FAIL", "FAIL"],
+      [ruleId, "GOLDEN_FAIL", "MANUAL_CHECK"],
       [ruleId, "GOLDEN_MANUAL", "MANUAL_CHECK"]
     ] as const)
   )("%s returns %s for %s golden evidence", async (ruleId, marker, expectedStatus) => {
@@ -231,7 +231,7 @@ describe("pilot semantic rules shadow mode", () => {
     expect(result).toMatchObject({
       status: "MANUAL_CHECK",
       result: expect.objectContaining({
-        reasonCode: "TRUNCATED_POLICY_REQUIRES_MANUAL_CHECK"
+        observation: "ABSENT"
       })
     });
   });

@@ -35,7 +35,7 @@ export interface EvaluateSemanticShadowRulesInput {
 }
 
 const defaultShadowProvider = new FakeSemanticModelProvider({
-  status: "MANUAL_CHECK",
+  observation: "AMBIGUOUS",
   confidence: 0.5,
   reason_code: "SHADOW_FAKE_PROVIDER",
   reason: "Fake shadow provider does not make semantic conclusions.",
@@ -231,6 +231,7 @@ function guardTruncatedPolicyFail(
 
   const guarded: SemanticEvaluation = {
     status: "MANUAL_CHECK",
+    observation: result.observation,
     confidence: Math.min(result.confidence, 0.5),
     reasonCode: "TRUNCATED_POLICY_REQUIRES_MANUAL_CHECK",
     reason: "Policy evidence was truncated, so shadow mode cannot produce an absence-based FAIL.",

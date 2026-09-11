@@ -16,7 +16,7 @@ const DEFAULT_SMOKE_PROVIDER_TIMEOUT_MS = 60_000;
 const EVALUATOR_TIMEOUT_BUFFER_MS = 5_000;
 const semanticOutputSchema = z
   .object({
-    status: z.enum(["PASS", "FAIL", "MANUAL_CHECK"]),
+    observation: z.enum(["PRESENT", "ABSENT", "AMBIGUOUS"]),
     confidence: z.number().min(0).max(1),
     reason_code: z.string().min(1).max(80),
     reason: z.string().min(1).max(1_000),
@@ -30,7 +30,7 @@ type SafeProviderDiagnostic = {
   content_type?: string;
   json_parse_success: boolean;
   parsed_keys: string[];
-  status?: unknown;
+  observation?: unknown;
   confidence_type?: string;
   reason_code?: unknown;
   evidence_refs?: unknown;
@@ -46,8 +46,7 @@ const cases: SmokeCase[] = [
     input: {
       ruleId: "PD-008",
       ruleVersion: "0.2-shadow",
-      criterion:
-        "Determine whether the supplied consent text clearly states at least one concrete purpose for personal-data processing. Return PASS when a concrete purpose is stated, FAIL when consent is requested but no concrete purpose is stated, and MANUAL_CHECK when the excerpt is too fragmented or ambiguous.",
+      criterion: "Determine whether the supplied consent text clearly states at least one concrete purpose for personal-data processing.",
       evidence: [
         {
           ref: "consent_text:synthetic-pass",
@@ -72,8 +71,7 @@ const cases: SmokeCase[] = [
     input: {
       ruleId: "PD-008",
       ruleVersion: "0.2-shadow",
-      criterion:
-        "Determine whether the supplied consent text clearly states at least one concrete purpose for personal-data processing. Return PASS when a concrete purpose is stated, FAIL when consent is requested but no concrete purpose is stated, and MANUAL_CHECK when the excerpt is too fragmented or ambiguous.",
+      criterion: "Determine whether the supplied consent text clearly states at least one concrete purpose for personal-data processing.",
       evidence: [
         {
           ref: "consent_text:synthetic-fail",
@@ -143,6 +141,7 @@ async function main() {
       synthetic_input: item.expected === "PASS" ? "Consent text contains a concrete purpose." : "Consent text omits a concrete purpose.",
       model,
       result_status: result.status,
+      semantic_observation: result.status === "NO_EVALUATION" ? undefined : result.observation,
       confidence: result.status === "NO_EVALUATION" ? undefined : result.confidence,
       reason_code: result.status === "NO_EVALUATION" ? result.technicalErrorCode : result.reasonCode,
       evidence_refs: result.status === "NO_EVALUATION" ? [] : result.evidenceRefs,
@@ -217,7 +216,7 @@ async function captureSafeProviderDiagnostic(response: Response, allowedRefs: st
 
   const object = parsed as Record<string, unknown>;
   diagnostic.parsed_keys = Object.keys(object);
-  diagnostic.status = object.status;
+  diagnostic.observation = object.observation;
   diagnostic.confidence_type = typeName(object.confidence);
   diagnostic.reason_code = object.reason_code;
   diagnostic.evidence_refs = object.evidence_refs;

@@ -4,13 +4,13 @@ import { describe, expect, it } from "vitest";
 import { calculateBenchmarkMetrics, runPilotBenchmark, writeBenchmarkJsonl, type BenchmarkResultRow } from "@/semantic-evaluator/benchmark";
 import { buildBenchmarkInput, PILOT_BENCHMARK_CASES, type PilotBenchmarkCase } from "@/semantic-evaluator/benchmark-dataset";
 import { FakeSemanticModelProvider } from "@/semantic-evaluator/fake-provider";
-import type { SemanticModelRequest } from "@/semantic-evaluator/types";
+import type { SemanticModelRequest, SemanticObservation } from "@/semantic-evaluator/types";
 
-function semanticResponse(status: "PASS" | "FAIL" | "MANUAL_CHECK", request: SemanticModelRequest) {
+function semanticResponse(observation: SemanticObservation, request: SemanticModelRequest) {
   return {
-    status,
-    confidence: status === "MANUAL_CHECK" ? 0.5 : 0.9,
-    reason_code: `${status}_SYNTHETIC`,
+    observation,
+    confidence: observation === "AMBIGUOUS" ? 0.5 : 0.9,
+    reason_code: `${observation}_SYNTHETIC`,
     reason: "Synthetic benchmark response.",
     evidence_refs: request.evidence.slice(0, 1).map((evidence) => evidence.ref)
   };
@@ -25,21 +25,27 @@ describe("pilot semantic benchmark", () => {
       expect(cases.filter((item) => item.expected === "PASS").length).toBeGreaterThanOrEqual(3);
       expect(cases.filter((item) => item.expected === "FAIL")).toHaveLength(3);
       expect(cases.filter((item) => item.expected === "MANUAL_CHECK").length).toBeGreaterThanOrEqual(1);
+      expect(cases.every((item) => ["PRESENT", "ABSENT", "AMBIGUOUS"].includes(item.expectedObservation))).toBe(true);
     }
   });
 
   it("does not send expected verdict, case id, or manual rationale to the model request", async () => {
     const testCase = PILOT_BENCHMARK_CASES[0];
-    const provider = new FakeSemanticModelProvider((request: SemanticModelRequest) => semanticResponse("PASS", request));
+    const provider = new FakeSemanticModelProvider((request: SemanticModelRequest) => semanticResponse("PRESENT", request));
 
     await runPilotBenchmark({ provider, cases: [testCase], stabilityCaseCount: 0 });
 
     const requestText = JSON.stringify(provider.requests[0]);
     expect(requestText).not.toContain(testCase.caseId);
     expect(requestText).not.toContain("expected");
+    expect(requestText).not.toContain("expectedObservation");
+    expect(requestText).not.toContain("expected_observation");
     expect(requestText).not.toContain(testCase.manualRationale);
     expect(requestText).not.toContain("clear_pass");
     expect(requestText).not.toContain("clear_fail");
+    expect(requestText).not.toContain("Return PASS");
+    expect(requestText).not.toContain("Return FAIL");
+    expect(requestText).not.toContain("Return MANUAL_CHECK");
   });
 
   it("sends completeness metadata to the model request", async () => {
@@ -47,6 +53,7 @@ describe("pilot semantic benchmark", () => {
       caseId: "PD-013-COMPLETE-MISSING",
       ruleId: "PD-013",
       expected: "FAIL",
+      expectedObservation: "ABSENT",
       manualRationale: "Complete synthetic policy omits purposes.",
       evidence: [
         {
@@ -56,7 +63,7 @@ describe("pilot semantic benchmark", () => {
         }
       ]
     };
-    const provider = new FakeSemanticModelProvider((request: SemanticModelRequest) => semanticResponse("FAIL", request));
+    const provider = new FakeSemanticModelProvider((request: SemanticModelRequest) => semanticResponse("ABSENT", request));
 
     await runPilotBenchmark({ provider, cases: [testCase], stabilityCaseCount: 0 });
 
@@ -70,6 +77,7 @@ describe("pilot semantic benchmark", () => {
       caseId: "PD-013-COMPLETE-ABSENCE",
       ruleId: "PD-013",
       expected: "FAIL",
+      expectedObservation: "ABSENT",
       manualRationale: "Complete synthetic policy omits purposes.",
       evidence: [
         {
@@ -80,19 +88,21 @@ describe("pilot semantic benchmark", () => {
       ]
     };
     const provider = new FakeSemanticModelProvider((request: SemanticModelRequest) =>
-      semanticResponse(request.evidence[0].completeness === "COMPLETE" ? "FAIL" : "MANUAL_CHECK", request)
+      semanticResponse("ABSENT", request)
     );
 
     const { results } = await runPilotBenchmark({ provider, cases: [testCase], stabilityCaseCount: 0 });
 
     expect(results[0]).toMatchObject({ expected: "FAIL", actual: "FAIL" });
+    expect(results[0]).toMatchObject({ expected_observation: "ABSENT", semantic_observation: "ABSENT" });
   });
 
-  it("keeps PARTIAL absence from becoming a confident FAIL", async () => {
+  it("maps PARTIAL absence to MANUAL_CHECK", async () => {
     const testCase: PilotBenchmarkCase = {
       caseId: "PD-013-PARTIAL-ABSENCE",
       ruleId: "PD-013",
       expected: "MANUAL_CHECK",
+      expectedObservation: "ABSENT",
       manualRationale: "Partial excerpt cannot prove absence.",
       evidence: [
         {
@@ -103,12 +113,13 @@ describe("pilot semantic benchmark", () => {
       ]
     };
     const provider = new FakeSemanticModelProvider((request: SemanticModelRequest) =>
-      semanticResponse(request.evidence[0].completeness === "COMPLETE" ? "FAIL" : "MANUAL_CHECK", request)
+      semanticResponse("ABSENT", request)
     );
 
     const { results } = await runPilotBenchmark({ provider, cases: [testCase], stabilityCaseCount: 0 });
 
     expect(results[0].actual).toBe("MANUAL_CHECK");
+    expect(results[0].semantic_observation).toBe("ABSENT");
   });
 
   it("does not treat TRUNCATED reference-only text as PASS", async () => {
@@ -116,6 +127,7 @@ describe("pilot semantic benchmark", () => {
       caseId: "PD-016-TRUNCATED-REFERENCE",
       ruleId: "PD-016",
       expected: "MANUAL_CHECK",
+      expectedObservation: "ABSENT",
       manualRationale: "Reference-only truncated evidence does not show the procedure.",
       evidence: [
         {
@@ -128,12 +140,13 @@ describe("pilot semantic benchmark", () => {
     };
     const provider = new FakeSemanticModelProvider((request: SemanticModelRequest) => {
       const text = request.evidence[0].excerpt;
-      return semanticResponse(text.includes("приведен далее") ? "MANUAL_CHECK" : "PASS", request);
+      return semanticResponse(text.includes("приведен далее") ? "PRESENT" : "ABSENT", request);
     });
 
     const { results } = await runPilotBenchmark({ provider, cases: [testCase], stabilityCaseCount: 0 });
 
     expect(results[0].actual).toBe("MANUAL_CHECK");
+    expect(results[0].semantic_observation).toBe("PRESENT");
   });
 
   it("allows explicit positive evidence to PASS even when evidence is PARTIAL", async () => {
@@ -141,6 +154,7 @@ describe("pilot semantic benchmark", () => {
       caseId: "PD-016-PARTIAL-POSITIVE",
       ruleId: "PD-016",
       expected: "PASS",
+      expectedObservation: "PRESENT",
       manualRationale: "Shown excerpt itself contains the request path.",
       evidence: [
         {
@@ -151,7 +165,7 @@ describe("pilot semantic benchmark", () => {
       ]
     };
     const provider = new FakeSemanticModelProvider((request: SemanticModelRequest) =>
-      semanticResponse(request.evidence[0].excerpt.includes("privacy@example.test") ? "PASS" : "MANUAL_CHECK", request)
+      semanticResponse(request.evidence[0].excerpt.includes("privacy@example.test") ? "PRESENT" : "AMBIGUOUS", request)
     );
 
     const { results } = await runPilotBenchmark({ provider, cases: [testCase], stabilityCaseCount: 0 });
@@ -159,11 +173,108 @@ describe("pilot semantic benchmark", () => {
     expect(results[0].actual).toBe("PASS");
   });
 
+  it("keeps a generic PD-013 site-interaction purpose from being confident PRESENT", async () => {
+    const testCase: PilotBenchmarkCase = {
+      caseId: "PD-013-GENERIC-PURPOSE-REGRESSION",
+      ruleId: "PD-013",
+      expected: "MANUAL_CHECK",
+      expectedObservation: "AMBIGUOUS",
+      manualRationale: "Generic site-interaction wording is purpose-like but not concrete.",
+      evidence: [
+        {
+          factType: "privacy_policy_text",
+          excerpt: "Информация используется в рамках взаимодействия с сайтом.",
+          completeness: "UNKNOWN"
+        }
+      ]
+    };
+    const provider = new FakeSemanticModelProvider((request: SemanticModelRequest) =>
+      semanticResponse(request.criterion.includes("too broad") ? "AMBIGUOUS" : "PRESENT", request)
+    );
+
+    const { results } = await runPilotBenchmark({ provider, cases: [testCase], stabilityCaseCount: 0 });
+
+    expect(results[0]).toMatchObject({ semantic_observation: "AMBIGUOUS", actual: "MANUAL_CHECK" });
+  });
+
+  it("keeps a concrete PD-013 order and feedback purpose as PRESENT", async () => {
+    const testCase: PilotBenchmarkCase = {
+      caseId: "PD-013-CONCRETE-PURPOSE-REGRESSION",
+      ruleId: "PD-013",
+      expected: "PASS",
+      expectedObservation: "PRESENT",
+      manualRationale: "Concrete order processing and feedback purposes are present.",
+      evidence: [
+        {
+          factType: "privacy_policy_text",
+          excerpt: "Данные используются для обработки заказа и обратной связи с пользователем.",
+          completeness: "UNKNOWN"
+        }
+      ]
+    };
+    const provider = new FakeSemanticModelProvider((request: SemanticModelRequest) =>
+      semanticResponse(request.criterion.includes("order processing") ? "PRESENT" : "AMBIGUOUS", request)
+    );
+
+    const { results } = await runPilotBenchmark({ provider, cases: [testCase], stabilityCaseCount: 0 });
+
+    expect(results[0]).toMatchObject({ semantic_observation: "PRESENT", actual: "PASS" });
+  });
+
+  it("keeps generic PD-014 user-provided information from being confident PRESENT", async () => {
+    const testCase: PilotBenchmarkCase = {
+      caseId: "PD-014-GENERIC-CATEGORIES-REGRESSION",
+      ruleId: "PD-014",
+      expected: "MANUAL_CHECK",
+      expectedObservation: "AMBIGUOUS",
+      manualRationale: "Generic user-provided information does not identify data categories clearly.",
+      evidence: [
+        {
+          factType: "privacy_policy_text",
+          excerpt: "Обрабатываются сведения, предоставленные пользователем при использовании сайта.",
+          completeness: "UNKNOWN"
+        }
+      ]
+    };
+    const provider = new FakeSemanticModelProvider((request: SemanticModelRequest) =>
+      semanticResponse(request.criterion.includes("information provided by the user") ? "AMBIGUOUS" : "PRESENT", request)
+    );
+
+    const { results } = await runPilotBenchmark({ provider, cases: [testCase], stabilityCaseCount: 0 });
+
+    expect(results[0]).toMatchObject({ semantic_observation: "AMBIGUOUS", actual: "MANUAL_CHECK" });
+  });
+
+  it("keeps concrete PD-014 name, phone, and email categories as PRESENT", async () => {
+    const testCase: PilotBenchmarkCase = {
+      caseId: "PD-014-CONCRETE-CATEGORIES-REGRESSION",
+      ruleId: "PD-014",
+      expected: "PASS",
+      expectedObservation: "PRESENT",
+      manualRationale: "Concrete categories are named.",
+      evidence: [
+        {
+          factType: "privacy_policy_text",
+          excerpt: "Оператор обрабатывает имя, телефон и адрес электронной почты пользователя.",
+          completeness: "UNKNOWN"
+        }
+      ]
+    };
+    const provider = new FakeSemanticModelProvider((request: SemanticModelRequest) =>
+      semanticResponse(request.criterion.includes("name/full name") ? "PRESENT" : "AMBIGUOUS", request)
+    );
+
+    const { results } = await runPilotBenchmark({ provider, cases: [testCase], stabilityCaseCount: 0 });
+
+    expect(results[0]).toMatchObject({ semantic_observation: "PRESENT", actual: "PASS" });
+  });
+
   it("writes benchmark artifacts without raw evidence or secrets", async () => {
     const testCase: PilotBenchmarkCase = {
       caseId: "PD-008-SECRET-HYGIENE",
       ruleId: "PD-008",
       expected: "PASS",
+      expectedObservation: "PRESENT",
       manualRationale: "Synthetic secret hygiene test.",
       evidence: [
         {
@@ -173,7 +284,7 @@ describe("pilot semantic benchmark", () => {
         }
       ]
     };
-    const provider = new FakeSemanticModelProvider((request: SemanticModelRequest) => semanticResponse("PASS", request));
+    const provider = new FakeSemanticModelProvider((request: SemanticModelRequest) => semanticResponse("PRESENT", request));
     const { results, stabilityRuns } = await runPilotBenchmark({ provider, cases: [testCase], stabilityCaseCount: 0 });
     const artifactDir = path.join(process.cwd(), "tmp", "benchmark-tests");
     const artifactPath = path.join(artifactDir, "artifact.jsonl");
@@ -190,7 +301,7 @@ describe("pilot semantic benchmark", () => {
 
   it("persists stability run rows in the benchmark artifact", async () => {
     const cases = PILOT_BENCHMARK_CASES.slice(0, 2);
-    const provider = new FakeSemanticModelProvider((request: SemanticModelRequest) => semanticResponse("PASS", request));
+    const provider = new FakeSemanticModelProvider((request: SemanticModelRequest) => semanticResponse("PRESENT", request));
     const benchmark = await runPilotBenchmark({ provider, cases, stabilityCaseCount: 2, stabilityRuns: 3 });
     const artifactDir = path.join(process.cwd(), "tmp", "benchmark-tests");
     const artifactPath = path.join(artifactDir, "stability.jsonl");
@@ -221,6 +332,8 @@ describe("pilot semantic benchmark", () => {
     expect(metrics.total_cases).toBe(4);
     expect(metrics.evaluated_cases).toBe(3);
     expect(metrics.technical_no_evaluation).toBe(1);
+    expect(metrics.observation_accuracy).toBeCloseTo(2 / 3);
+    expect(metrics.observation_confusion_matrix.ABSENT.PRESENT).toBe(1);
     expect(metrics.false_pass).toBe(1);
     expect(metrics.false_fail).toBe(0);
     expect(metrics.expected_manual_check_actual.MANUAL_CHECK).toBe(1);
@@ -250,7 +363,9 @@ function row(
     case_id: caseId,
     rule_id: ruleId,
     expected,
+    expected_observation: expected === "PASS" ? "PRESENT" : expected === "FAIL" ? "ABSENT" : "AMBIGUOUS",
     actual,
+    semantic_observation: actual === "NO_EVALUATION" ? "NO_EVALUATION" : actual === "PASS" ? "PRESENT" : actual === "FAIL" ? "ABSENT" : "AMBIGUOUS",
     confidence,
     reason_code: actual === "NO_EVALUATION" ? null : `${actual}_SYNTHETIC`,
     evidence_refs: actual === "NO_EVALUATION" ? [] : ["consent_text:1"],
