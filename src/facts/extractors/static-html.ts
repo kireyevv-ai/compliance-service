@@ -148,7 +148,11 @@ export function extractStaticFacts(
   }
 
   pushCandidateFacts(facts, sellerCandidates);
-  facts.push(...extractPolicyTextFacts(pages, unique(privacyLinks.map((link) => link.url))));
+  facts.push(
+    ...extractPolicyTextFacts(pages, unique(privacyLinks.map((link) => link.url)), {
+      pageLimitations: policyPageLimitations(pages)
+    })
+  );
   pushCoverageAndCompletedAggregates(facts, pages, options, {
     privacyLinks,
     offerLinks,
@@ -595,26 +599,51 @@ function pushCoverageAndCompletedAggregates(
 
 function detectContentLimitation(pages: CrawledPage[]): ContentLimitation {
   for (const page of pages) {
-    if (page.contentLimited) {
-      return { contentLimited: true, limitationReason: page.limitationReason ?? "CONTENT_LIMITED" };
-    }
-
-    if (page.status === 403 || page.status === 429) {
-      return { contentLimited: true, limitationReason: `HTTP ${page.status}` };
-    }
-
-    if (LIMITED_URL_RE.test(page.url)) {
-      return { contentLimited: true, limitationReason: "Limited-content interstitial URL" };
-    }
-
-    const $ = cheerio.load(page.html);
-    const text = compactText([page.title, $("title").text(), $("body").text()].filter(Boolean).join(" "), 3000);
-    if (LIMITED_TEXT_RE.test(text)) {
-      return { contentLimited: true, limitationReason: "Limited-content interstitial text" };
+    const limitation = detectPageContentLimitation(page);
+    if (limitation.contentLimited) {
+      return { contentLimited: true, limitationReason: limitation.limitationReason ?? "CONTENT_LIMITED" };
     }
   }
 
   return { contentLimited: false, limitationReason: null };
+}
+
+function policyPageLimitations(pages: CrawledPage[]): Map<string, ContentLimitation & { interstitialDetected: boolean }> {
+  const map = new Map<string, ContentLimitation & { interstitialDetected: boolean }>();
+  for (const page of pages) {
+    const normalizedUrl = normalizeUrl(page.url);
+    if (!normalizedUrl) {
+      continue;
+    }
+    map.set(normalizedUrl, detectPageContentLimitation(page));
+  }
+  return map;
+}
+
+function detectPageContentLimitation(page: CrawledPage): ContentLimitation & { interstitialDetected: boolean } {
+  if (page.contentLimited) {
+    return {
+      contentLimited: true,
+      limitationReason: page.limitationReason ?? "CONTENT_LIMITED",
+      interstitialDetected: false
+    };
+  }
+
+  if (page.status === 403 || page.status === 429) {
+    return { contentLimited: true, limitationReason: `HTTP ${page.status}`, interstitialDetected: true };
+  }
+
+  if (LIMITED_URL_RE.test(page.url)) {
+    return { contentLimited: true, limitationReason: "Limited-content interstitial URL", interstitialDetected: true };
+  }
+
+  const $ = cheerio.load(page.html);
+  const text = compactText([page.title, $("title").text(), $("body").text()].filter(Boolean).join(" "), 3000);
+  if (LIMITED_TEXT_RE.test(text)) {
+    return { contentLimited: true, limitationReason: "Limited-content interstitial text", interstitialDetected: true };
+  }
+
+  return { contentLimited: false, limitationReason: null, interstitialDetected: false };
 }
 
 function siteBooleanFact(
@@ -726,6 +755,16 @@ function resolveUrl(rawUrl: string | undefined, baseUrl: string): string | undef
 
   try {
     return new URL(rawUrl, baseUrl).toString();
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizeUrl(rawUrl: string): string | undefined {
+  try {
+    const url = new URL(rawUrl);
+    url.hash = "";
+    return url.toString();
   } catch {
     return undefined;
   }

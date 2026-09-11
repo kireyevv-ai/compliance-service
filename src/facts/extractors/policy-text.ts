@@ -3,9 +3,17 @@ import type { CrawledPage } from "@/scanner/crawl/types";
 import type { ExtractedEvidence, ExtractedFact } from "./types";
 
 export const DEFAULT_POLICY_TEXT_LIMIT = 50_000;
+export type PolicyTextExtractionRoot = "main" | "article" | "role_main" | "body";
+
+export interface PolicyPageLimitationMetadata {
+  contentLimited: boolean;
+  limitationReason?: string | null;
+  interstitialDetected: boolean;
+}
 
 export interface PolicyTextExtractionOptions {
   maxChars?: number;
+  pageLimitations?: Map<string, PolicyPageLimitationMetadata>;
 }
 
 export function extractPolicyTextFacts(
@@ -32,18 +40,28 @@ export function extractPolicyTextFacts(
       continue;
     }
 
+    const pageLimitation = normalizedPageUrl ? options.pageLimitations?.get(normalizedPageUrl) : undefined;
     facts.push({
       pageUrl: page.url,
       factType: "privacy_policy_text",
       value: {
         sourceUrl: page.url,
+        documentType: documentTypeForPage(page),
+        fetchStatus: page.status,
+        fetchContentType: page.contentType,
+        contentLimited: pageLimitation?.contentLimited ?? page.contentLimited === true,
+        limitationReason: pageLimitation?.limitationReason ?? page.limitationReason,
+        interstitialDetected: pageLimitation?.interstitialDetected ?? false,
+        extractionSucceeded: extracted.extractionSucceeded,
+        extractionRoot: extracted.extractionRoot,
+        extractionRootFallback: extracted.extractionRootFallback,
         text: extracted.text,
         textLength: extracted.text.length,
         originalTextLength: extracted.originalTextLength,
         truncated: extracted.truncated,
         maxChars
       },
-      evidence: [policyTextEvidence(page.url, extracted, maxChars)]
+      evidence: [policyTextEvidence(page, extracted, maxChars, pageLimitation)]
     });
   }
 
@@ -53,7 +71,14 @@ export function extractPolicyTextFacts(
 function extractReadableTextFromHtml(
   html: string,
   maxChars: number
-): { text: string; originalTextLength: number; truncated: boolean } | undefined {
+): {
+  text: string;
+  originalTextLength: number;
+  truncated: boolean;
+  extractionRoot: PolicyTextExtractionRoot;
+  extractionRootFallback: boolean;
+  extractionSucceeded: boolean;
+} | undefined {
   const $ = cheerio.load(html);
 
   $("script, style, noscript, template, svg, header, footer, nav, aside, form").remove();
@@ -62,8 +87,8 @@ function extractReadableTextFromHtml(
     "[class*='nav' i], [id*='nav' i], [class*='menu' i], [id*='menu' i], [class*='footer' i], [id*='footer' i], [class*='header' i], [id*='header' i], [class*='cookie' i], [id*='cookie' i]"
   ).remove();
 
-  const root = $("main, article, [role='main']").first();
-  const rawText = compactText((root.length > 0 ? root : $("body")).text());
+  const root = selectExtractionRoot($);
+  const rawText = compactText(root.element.text());
 
   if (!rawText) {
     return undefined;
@@ -73,21 +98,41 @@ function extractReadableTextFromHtml(
   return {
     text: truncated ? rawText.slice(0, maxChars) : rawText,
     originalTextLength: rawText.length,
-    truncated
+    truncated,
+    extractionRoot: root.kind,
+    extractionRootFallback: root.fallback,
+    extractionSucceeded: true
   };
 }
 
 function policyTextEvidence(
-  pageUrl: string,
-  extracted: { text: string; originalTextLength: number; truncated: boolean },
-  maxChars: number
+  page: CrawledPage,
+  extracted: {
+    text: string;
+    originalTextLength: number;
+    truncated: boolean;
+    extractionRoot: PolicyTextExtractionRoot;
+    extractionRootFallback: boolean;
+    extractionSucceeded: boolean;
+  },
+  maxChars: number,
+  pageLimitation: PolicyPageLimitationMetadata | undefined
 ): ExtractedEvidence {
   return {
     evidenceType: "TEXT_FRAGMENT",
-    pageUrl,
+    pageUrl: page.url,
     payload: {
       kind: "privacy_policy_text",
-      sourceUrl: pageUrl,
+      sourceUrl: page.url,
+      documentType: documentTypeForPage(page),
+      fetchStatus: page.status,
+      fetchContentType: page.contentType,
+      contentLimited: pageLimitation?.contentLimited ?? page.contentLimited === true,
+      limitationReason: pageLimitation?.limitationReason ?? page.limitationReason,
+      interstitialDetected: pageLimitation?.interstitialDetected ?? false,
+      extractionSucceeded: extracted.extractionSucceeded,
+      extractionRoot: extracted.extractionRoot,
+      extractionRootFallback: extracted.extractionRootFallback,
       text: extracted.text,
       textLength: extracted.text.length,
       originalTextLength: extracted.originalTextLength,
@@ -95,6 +140,39 @@ function policyTextEvidence(
       maxChars
     }
   };
+}
+
+function selectExtractionRoot($: cheerio.CheerioAPI): {
+  kind: PolicyTextExtractionRoot;
+  fallback: boolean;
+  element: ReturnType<cheerio.CheerioAPI>;
+} {
+  const main = $("main").first();
+  if (main.length > 0) {
+    return { kind: "main", fallback: false, element: main };
+  }
+
+  const article = $("article").first();
+  if (article.length > 0) {
+    return { kind: "article", fallback: false, element: article };
+  }
+
+  const roleMain = $("[role='main']").first();
+  if (roleMain.length > 0) {
+    return { kind: "role_main", fallback: false, element: roleMain };
+  }
+
+  return { kind: "body", fallback: true, element: $("body") };
+}
+
+function documentTypeForPage(page: CrawledPage): "HTML" | "PDF" | "OTHER" {
+  if (/(?:^|;|\s)text\/html\b/i.test(page.contentType)) {
+    return "HTML";
+  }
+  if (/(?:^|;|\s)application\/pdf\b/i.test(page.contentType) || /\.pdf(?:[?#].*)?$/i.test(page.url)) {
+    return "PDF";
+  }
+  return "OTHER";
 }
 
 function isHtmlPage(page: CrawledPage): boolean {

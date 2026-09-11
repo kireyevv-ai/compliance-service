@@ -3,6 +3,7 @@ import type { Evidence } from "@/evidence/types";
 import type { Fact } from "@/facts/types";
 import { loadPilotSemanticRuntimeRules } from "@/legal-rules/runtime";
 import type { Rule } from "@/rule-engine/types";
+import { classifySemanticEvidenceCompleteness } from "./completeness";
 import { evaluateSemanticRule, type EvaluateSemanticRuleOptions } from "./evaluator";
 import { FakeSemanticModelProvider } from "./fake-provider";
 import type {
@@ -174,6 +175,15 @@ function evidenceMetadata(evidence: Evidence, fact: Fact): Record<string, unknow
   return {
     factType: fact.factType,
     sourceUrl: sanitizeUrlForModel(typeof payload.sourceUrl === "string" ? payload.sourceUrl : evidence.pageUrl || fact.pageUrl),
+    documentType: payload.documentType ?? fact.value.documentType,
+    fetchStatus: payload.fetchStatus ?? fact.value.fetchStatus,
+    fetchContentType: payload.fetchContentType ?? fact.value.fetchContentType,
+    contentLimited: payload.contentLimited ?? fact.value.contentLimited,
+    limitationReason: payload.limitationReason ?? fact.value.limitationReason,
+    interstitialDetected: payload.interstitialDetected ?? fact.value.interstitialDetected,
+    extractionSucceeded: payload.extractionSucceeded ?? fact.value.extractionSucceeded,
+    extractionRoot: payload.extractionRoot ?? fact.value.extractionRoot,
+    extractionRootFallback: payload.extractionRootFallback ?? fact.value.extractionRootFallback,
     truncated: payload.truncated === true || fact.value.truncated === true,
     originalTextLength: payload.originalTextLength ?? fact.value.originalTextLength,
     maxChars: payload.maxChars ?? fact.value.maxChars
@@ -182,10 +192,7 @@ function evidenceMetadata(evidence: Evidence, fact: Fact): Record<string, unknow
 
 function evidenceCompleteness(evidence: Evidence, fact: Fact): SemanticEvidenceCompleteness {
   const payload = evidence.payload ?? {};
-  if (payload.truncated === true || fact.value.truncated === true) {
-    return "TRUNCATED";
-  }
-  return "UNKNOWN";
+  return classifySemanticEvidenceCompleteness({ ...fact.value, ...payload });
 }
 
 function totalEvidenceTextLength(evidencePackage: SemanticEvidenceExcerpt[]): number {
@@ -197,6 +204,15 @@ function modelFacingFactValue(fact: Fact): Record<string, unknown> {
     formIndex: fact.value.formIndex,
     controlIndex: fact.value.controlIndex,
     sourceUrl: sanitizeUrlForModel(asString(fact.value.sourceUrl)),
+    documentType: fact.value.documentType,
+    fetchStatus: fact.value.fetchStatus,
+    fetchContentType: fact.value.fetchContentType,
+    contentLimited: fact.value.contentLimited,
+    limitationReason: fact.value.limitationReason,
+    interstitialDetected: fact.value.interstitialDetected,
+    extractionSucceeded: fact.value.extractionSucceeded,
+    extractionRoot: fact.value.extractionRoot,
+    extractionRootFallback: fact.value.extractionRootFallback,
     truncated: fact.value.truncated,
     originalTextLength: fact.value.originalTextLength,
     textLength: fact.value.textLength,

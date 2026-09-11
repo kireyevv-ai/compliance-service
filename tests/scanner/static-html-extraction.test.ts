@@ -336,17 +336,80 @@ describe("static HTML fact extraction", () => {
 
     expect(values(result, "privacy_policy_text")[0]).toMatchObject({
       sourceUrl: "https://example.test/privacy",
+      documentType: "HTML",
+      fetchStatus: 200,
+      fetchContentType: "text/html",
+      contentLimited: false,
+      interstitialDetected: false,
+      extractionSucceeded: true,
+      extractionRoot: "main",
+      extractionRootFallback: false,
       text: expect.stringContaining("Цель обработки"),
       truncated: false
     });
     expect(evidencePayloads(result, "privacy_policy_text")[0]).toMatchObject({
       kind: "privacy_policy_text",
       sourceUrl: "https://example.test/privacy",
+      documentType: "HTML",
+      fetchStatus: 200,
+      fetchContentType: "text/html",
+      contentLimited: false,
+      interstitialDetected: false,
+      extractionSucceeded: true,
+      extractionRoot: "main",
+      extractionRootFallback: false,
       text: expect.stringContaining("Категории данных")
     });
     expect(JSON.stringify(values(result, "privacy_policy_text"))).not.toContain("Главное меню");
     expect(JSON.stringify(values(result, "privacy_policy_text"))).not.toContain("window.secret");
     expect(JSON.stringify(values(result, "privacy_policy_text"))).not.toContain("Подвал сайта");
+  });
+
+  it("marks body fallback extraction metadata without treating it as a semantic root", () => {
+    const result = extractStaticFacts(
+      [
+        page("https://example.test/", `<a href="/privacy">Privacy</a>`),
+        page(
+          "https://example.test/privacy",
+          `<section><h1>Privacy</h1><p>Цель обработки: обратная связь.</p></section>`
+        )
+      ],
+      { crawlCompleted: true, startUrl: "https://example.test/" }
+    );
+
+    expect(values(result, "privacy_policy_text")[0]).toMatchObject({
+      extractionSucceeded: true,
+      extractionRoot: "body",
+      extractionRootFallback: true,
+      truncated: false
+    });
+  });
+
+  it("carries per-policy interstitial metadata into privacy policy text evidence when text is extracted", () => {
+    const result = extractStaticFacts(
+      [
+        page("https://example.test/", `<a href="/privacy">Privacy</a>`),
+        {
+          ...page(
+            "https://example.test/privacy",
+            `<main><h1>Security check</h1><p>Please verify you are human before continuing.</p></main>`
+          ),
+          title: "Security check"
+        }
+      ],
+      { crawlCompleted: true, startUrl: "https://example.test/" }
+    );
+
+    expect(values(result, "privacy_policy_text")[0]).toMatchObject({
+      contentLimited: true,
+      limitationReason: "Limited-content interstitial text",
+      interstitialDetected: true
+    });
+    expect(evidencePayloads(result, "privacy_policy_text")[0]).toMatchObject({
+      contentLimited: true,
+      limitationReason: "Limited-content interstitial text",
+      interstitialDetected: true
+    });
   });
 
   it("preserves policy text over the previous 12k limit when under the 50k cap", () => {

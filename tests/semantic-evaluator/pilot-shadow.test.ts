@@ -236,6 +236,40 @@ describe("pilot semantic rules shadow mode", () => {
     });
   });
 
+  it("allows COMPLETE policy evidence with ABSENT observation to produce shadow FAIL", async () => {
+    const { fact, evidence } = policyFixtureWithText("complete-absent", "GOLDEN_FAIL policy text without required purpose");
+    const completeMetadata = {
+      documentType: "HTML",
+      fetchStatus: 200,
+      fetchContentType: "text/html",
+      contentLimited: false,
+      interstitialDetected: false,
+      extractionSucceeded: true,
+      extractionRoot: "main",
+      extractionRootFallback: false,
+      truncated: false,
+      originalTextLength: fact.value.originalTextLength,
+      maxChars: 50_000
+    };
+    fact.value = { ...fact.value, ...completeMetadata };
+    evidence.payload = { ...evidence.payload, ...completeMetadata };
+
+    const [result] = await evaluateSemanticRulesShadow({
+      scan,
+      facts: [fact],
+      evidence: [evidence],
+      rules: ruleOnly("PD-013"),
+      provider: goldenProvider()
+    });
+
+    expect(result).toMatchObject({
+      status: "FAIL",
+      result: expect.objectContaining({
+        observation: "ABSENT"
+      })
+    });
+  });
+
   it("passes policy text to the provider only through evidence excerpts", async () => {
     const marker = "UNIQUE_POLICY_RAW_TEXT_MARKER";
     const provider = goldenProvider();
