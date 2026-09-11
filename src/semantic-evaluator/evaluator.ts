@@ -20,6 +20,9 @@ export const SEMANTIC_EVALUATOR_INSTRUCTIONS = [
   "Do not infer facts that are not present in the supplied Evidence.",
   "Do not apply legal knowledge outside the supplied criterion.",
   "Choose MANUAL_CHECK when the Evidence is ambiguous or insufficient.",
+  "For rules checking whether a required element is present: COMPLETE Evidence with the required element absent may support FAIL; PARTIAL, TRUNCATED, or UNKNOWN Evidence with the required element absent should be MANUAL_CHECK when absence cannot be proven from the supplied Evidence.",
+  "Explicit positive evidence may support PASS even when Evidence is PARTIAL, if the required element is fully shown in the supplied text.",
+  "A reference-only statement such as 'see below', 'provided later', or 'described in another section' does not by itself prove the required content is present; return MANUAL_CHECK when the actual required content is not supplied.",
   "Return evidence_refs using only refs from the supplied Evidence.",
   "Do not generate legal basis, law text, severity, remediation, rule applicability, or chain-of-thought."
 ].join("\n");

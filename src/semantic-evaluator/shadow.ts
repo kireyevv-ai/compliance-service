@@ -9,6 +9,7 @@ import type {
   SemanticEvaluation,
   SemanticEvaluationInput,
   SemanticEvaluationResult,
+  SemanticEvidenceCompleteness,
   SemanticEvidenceExcerpt,
   SemanticModelProvider,
   SemanticTechnicalErrorCode
@@ -152,6 +153,7 @@ function buildEvidencePackage(facts: Fact[], evidence: Evidence[], factTypes: st
       evidenceType: item.evidenceType,
       pageUrl: sanitizeUrlForModel(item.pageUrl || fact.pageUrl),
       excerpt,
+      completeness: evidenceCompleteness(item, fact),
       metadata: evidenceMetadata(item, fact)
     });
   }
@@ -176,6 +178,14 @@ function evidenceMetadata(evidence: Evidence, fact: Fact): Record<string, unknow
     originalTextLength: payload.originalTextLength ?? fact.value.originalTextLength,
     maxChars: payload.maxChars ?? fact.value.maxChars
   };
+}
+
+function evidenceCompleteness(evidence: Evidence, fact: Fact): SemanticEvidenceCompleteness {
+  const payload = evidence.payload ?? {};
+  if (payload.truncated === true || fact.value.truncated === true) {
+    return "TRUNCATED";
+  }
+  return "UNKNOWN";
 }
 
 function totalEvidenceTextLength(evidencePackage: SemanticEvidenceExcerpt[]): number {
@@ -230,7 +240,7 @@ function guardTruncatedPolicyFail(
 }
 
 function isTruncatedPolicyEvidence(item: SemanticEvidenceExcerpt): boolean {
-  return item.metadata?.factType === "privacy_policy_text" && item.metadata.truncated === true;
+  return item.metadata?.factType === "privacy_policy_text" && item.completeness === "TRUNCATED";
 }
 
 function noShadowEvaluation(

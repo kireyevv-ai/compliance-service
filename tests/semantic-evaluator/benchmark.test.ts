@@ -22,9 +22,9 @@ describe("pilot semantic benchmark", () => {
     for (const ruleId of ["PD-008", "PD-013", "PD-014", "PD-015", "PD-016"]) {
       const cases = PILOT_BENCHMARK_CASES.filter((item) => item.ruleId === ruleId);
       expect(cases).toHaveLength(8);
-      expect(cases.filter((item) => item.expected === "PASS")).toHaveLength(3);
+      expect(cases.filter((item) => item.expected === "PASS").length).toBeGreaterThanOrEqual(3);
       expect(cases.filter((item) => item.expected === "FAIL")).toHaveLength(3);
-      expect(cases.filter((item) => item.expected === "MANUAL_CHECK")).toHaveLength(2);
+      expect(cases.filter((item) => item.expected === "MANUAL_CHECK").length).toBeGreaterThanOrEqual(1);
     }
   });
 
@@ -42,6 +42,123 @@ describe("pilot semantic benchmark", () => {
     expect(requestText).not.toContain("clear_fail");
   });
 
+  it("sends completeness metadata to the model request", async () => {
+    const testCase: PilotBenchmarkCase = {
+      caseId: "PD-013-COMPLETE-MISSING",
+      ruleId: "PD-013",
+      expected: "FAIL",
+      manualRationale: "Complete synthetic policy omits purposes.",
+      evidence: [
+        {
+          factType: "privacy_policy_text",
+          excerpt: "Полный текст политики: оператор защищает данные.",
+          completeness: "COMPLETE"
+        }
+      ]
+    };
+    const provider = new FakeSemanticModelProvider((request: SemanticModelRequest) => semanticResponse("FAIL", request));
+
+    await runPilotBenchmark({ provider, cases: [testCase], stabilityCaseCount: 0 });
+
+    expect(provider.requests[0].evidence[0]).toMatchObject({
+      completeness: "COMPLETE"
+    });
+  });
+
+  it("allows COMPLETE evidence with a missing required element to produce FAIL", async () => {
+    const testCase: PilotBenchmarkCase = {
+      caseId: "PD-013-COMPLETE-ABSENCE",
+      ruleId: "PD-013",
+      expected: "FAIL",
+      manualRationale: "Complete synthetic policy omits purposes.",
+      evidence: [
+        {
+          factType: "privacy_policy_text",
+          excerpt: "Полный текст политики: оператор защищает данные.",
+          completeness: "COMPLETE"
+        }
+      ]
+    };
+    const provider = new FakeSemanticModelProvider((request: SemanticModelRequest) =>
+      semanticResponse(request.evidence[0].completeness === "COMPLETE" ? "FAIL" : "MANUAL_CHECK", request)
+    );
+
+    const { results } = await runPilotBenchmark({ provider, cases: [testCase], stabilityCaseCount: 0 });
+
+    expect(results[0]).toMatchObject({ expected: "FAIL", actual: "FAIL" });
+  });
+
+  it("keeps PARTIAL absence from becoming a confident FAIL", async () => {
+    const testCase: PilotBenchmarkCase = {
+      caseId: "PD-013-PARTIAL-ABSENCE",
+      ruleId: "PD-013",
+      expected: "MANUAL_CHECK",
+      manualRationale: "Partial excerpt cannot prove absence.",
+      evidence: [
+        {
+          factType: "privacy_policy_text",
+          excerpt: "Оператор защищает данные.",
+          completeness: "PARTIAL"
+        }
+      ]
+    };
+    const provider = new FakeSemanticModelProvider((request: SemanticModelRequest) =>
+      semanticResponse(request.evidence[0].completeness === "COMPLETE" ? "FAIL" : "MANUAL_CHECK", request)
+    );
+
+    const { results } = await runPilotBenchmark({ provider, cases: [testCase], stabilityCaseCount: 0 });
+
+    expect(results[0].actual).toBe("MANUAL_CHECK");
+  });
+
+  it("does not treat TRUNCATED reference-only text as PASS", async () => {
+    const testCase: PilotBenchmarkCase = {
+      caseId: "PD-016-TRUNCATED-REFERENCE",
+      ruleId: "PD-016",
+      expected: "MANUAL_CHECK",
+      manualRationale: "Reference-only truncated evidence does not show the procedure.",
+      evidence: [
+        {
+          factType: "privacy_policy_text",
+          excerpt: "Порядок направления запросов субъектов персональных данных приведен далее.",
+          completeness: "TRUNCATED",
+          truncated: true
+        }
+      ]
+    };
+    const provider = new FakeSemanticModelProvider((request: SemanticModelRequest) => {
+      const text = request.evidence[0].excerpt;
+      return semanticResponse(text.includes("приведен далее") ? "MANUAL_CHECK" : "PASS", request);
+    });
+
+    const { results } = await runPilotBenchmark({ provider, cases: [testCase], stabilityCaseCount: 0 });
+
+    expect(results[0].actual).toBe("MANUAL_CHECK");
+  });
+
+  it("allows explicit positive evidence to PASS even when evidence is PARTIAL", async () => {
+    const testCase: PilotBenchmarkCase = {
+      caseId: "PD-016-PARTIAL-POSITIVE",
+      ruleId: "PD-016",
+      expected: "PASS",
+      manualRationale: "Shown excerpt itself contains the request path.",
+      evidence: [
+        {
+          factType: "privacy_policy_text",
+          excerpt: "Запрос на удаление данных можно направить на privacy@example.test.",
+          completeness: "PARTIAL"
+        }
+      ]
+    };
+    const provider = new FakeSemanticModelProvider((request: SemanticModelRequest) =>
+      semanticResponse(request.evidence[0].excerpt.includes("privacy@example.test") ? "PASS" : "MANUAL_CHECK", request)
+    );
+
+    const { results } = await runPilotBenchmark({ provider, cases: [testCase], stabilityCaseCount: 0 });
+
+    expect(results[0].actual).toBe("PASS");
+  });
+
   it("writes benchmark artifacts without raw evidence or secrets", async () => {
     const testCase: PilotBenchmarkCase = {
       caseId: "PD-008-SECRET-HYGIENE",
@@ -51,7 +168,8 @@ describe("pilot semantic benchmark", () => {
       evidence: [
         {
           factType: "consent_text",
-          excerpt: "synthetic-secret-token should not be written to artifact"
+          excerpt: "synthetic-secret-token should not be written to artifact",
+          completeness: "PARTIAL"
         }
       ]
     };

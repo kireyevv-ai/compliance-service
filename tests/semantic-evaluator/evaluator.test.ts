@@ -17,7 +17,8 @@ const input: SemanticEvaluationInput = {
       evidenceId: "00000000-0000-4000-8000-000000000201",
       evidenceType: "TEXT_FRAGMENT",
       pageUrl: "https://example.test/form",
-      excerpt: "Согласие на обработку персональных данных для обработки заявки."
+      excerpt: "Согласие на обработку персональных данных для обработки заявки.",
+      completeness: "COMPLETE"
     }
   ],
   context: { siteType: "B2B" }

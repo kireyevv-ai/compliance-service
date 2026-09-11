@@ -11,6 +11,9 @@ export const SEMANTIC_OUTPUT_LIMITS = {
   evidenceRef: { minLength: 1 }
 } as const;
 
+export const SEMANTIC_EVIDENCE_COMPLETENESS = ["COMPLETE", "PARTIAL", "TRUNCATED", "UNKNOWN"] as const;
+export type SemanticEvidenceCompleteness = (typeof SEMANTIC_EVIDENCE_COMPLETENESS)[number];
+
 export type SemanticTechnicalErrorCode =
   | "PROVIDER_TIMEOUT"
   | "PROVIDER_ERROR"
@@ -49,6 +52,7 @@ export interface SemanticEvidenceExcerpt {
   evidenceType: EvidenceType;
   pageUrl?: string;
   excerpt: string;
+  completeness: SemanticEvidenceCompleteness;
   metadata?: Record<string, unknown>;
 }
 

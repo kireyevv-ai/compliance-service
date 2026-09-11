@@ -15,6 +15,7 @@ const request: SemanticModelRequest = {
       evidenceType: "TEXT_FRAGMENT",
       pageUrl: "https://example.test/privacy",
       excerpt: "RAW_EVIDENCE_SHOULD_ONLY_BE_IN_REQUEST_BODY",
+      completeness: "COMPLETE",
       metadata: {
         factType: "privacy_policy_text"
       }
@@ -325,7 +326,8 @@ describe("GigaChat semantic provider", () => {
           ...request.evidence[0],
           ref: "privacy_policy_text:evidence-2",
           evidenceId: "evidence-2",
-          excerpt: "Second synthetic excerpt."
+          excerpt: "Second synthetic excerpt.",
+          completeness: "COMPLETE"
         }
       ]
     };

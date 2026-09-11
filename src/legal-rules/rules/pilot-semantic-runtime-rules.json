@@ -42,7 +42,7 @@
     "severity": "MEDIUM",
     "evaluation": {
       "kind": "SEMANTIC_CRITERION",
-      "criterion": "Determine whether the supplied privacy policy text describes purposes for personal-data processing. Return PASS when purposes are described, FAIL when the text is clearly a privacy policy but processing purposes are absent, and MANUAL_CHECK when the text is ambiguous, incomplete, or insufficient.",
+      "criterion": "Determine whether the supplied privacy policy text describes purposes for personal-data processing. Return PASS when purposes are described. Return FAIL when Evidence completeness is COMPLETE, the text is clearly a privacy policy, and processing purposes are absent. Return MANUAL_CHECK when Evidence completeness is PARTIAL, TRUNCATED, or UNKNOWN and the absence of purposes cannot be proven from the supplied Evidence.",
       "evidence_fact_types": ["privacy_policy_text"]
     },
     "remediation": "Keep remediation in application logic; this shadow rule does not create user-facing findings.",
@@ -69,7 +69,7 @@
     "severity": "MEDIUM",
     "evaluation": {
       "kind": "SEMANTIC_CRITERION",
-      "criterion": "Determine whether the supplied privacy policy text describes categories or examples of personal data being processed. Return PASS when categories or concrete examples are described, FAIL when the text is clearly a privacy policy but data categories are absent, and MANUAL_CHECK when the text is ambiguous, incomplete, or insufficient.",
+      "criterion": "Determine whether the supplied privacy policy text describes categories or examples of personal data being processed. Return PASS when categories or concrete examples are described. Return FAIL when Evidence completeness is COMPLETE, the text is clearly a privacy policy, and data categories are absent. Return MANUAL_CHECK when Evidence completeness is PARTIAL, TRUNCATED, or UNKNOWN and the absence of data categories cannot be proven from the supplied Evidence.",
       "evidence_fact_types": ["privacy_policy_text"]
     },
     "remediation": "Keep remediation in application logic; this shadow rule does not create user-facing findings.",
@@ -96,7 +96,7 @@
     "severity": "MEDIUM",
     "evaluation": {
       "kind": "SEMANTIC_CRITERION",
-      "criterion": "Determine whether the supplied privacy policy text describes retention periods, storage duration, deletion procedure, or conditions for ending personal-data processing. Return PASS when such retention or deletion handling is described, FAIL when the text is clearly a privacy policy but retention/deletion handling is absent, and MANUAL_CHECK when the text is ambiguous, incomplete, or insufficient.",
+      "criterion": "Determine whether the supplied privacy policy text describes retention periods, storage duration, deletion procedure, or conditions for ending personal-data processing. Return PASS when such retention or deletion handling is described. Return FAIL when Evidence completeness is COMPLETE, the text is clearly a privacy policy, and retention/deletion handling is absent. Return MANUAL_CHECK when Evidence completeness is PARTIAL, TRUNCATED, or UNKNOWN and the absence of retention/deletion handling cannot be proven from the supplied Evidence.",
       "evidence_fact_types": ["privacy_policy_text"]
     },
     "remediation": "Keep remediation in application logic; this shadow rule does not create user-facing findings.",
@@ -123,7 +123,7 @@
     "severity": "MEDIUM",
     "evaluation": {
       "kind": "SEMANTIC_CRITERION",
-      "criterion": "Determine whether the supplied privacy policy text describes how a person can submit requests about their personal data, such as access, correction, withdrawal, blocking, or deletion requests. Return PASS when a request procedure or contact path is described, FAIL when the text is clearly a privacy policy but no such request procedure is present, and MANUAL_CHECK when the text is ambiguous, incomplete, or insufficient.",
+      "criterion": "Determine whether the supplied privacy policy text describes how a person can submit requests about their personal data, such as access, correction, withdrawal, blocking, or deletion requests. Return PASS when a request procedure or contact path is described. Return FAIL when Evidence completeness is COMPLETE, the text is clearly a privacy policy, and no such request procedure is present. Return MANUAL_CHECK when Evidence completeness is PARTIAL, TRUNCATED, or UNKNOWN and the absence of a request procedure cannot be proven from the supplied Evidence.",
       "evidence_fact_types": ["privacy_policy_text"]
     },
     "remediation": "Keep remediation in application logic; this shadow rule does not create user-facing findings.",

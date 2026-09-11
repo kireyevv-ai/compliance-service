@@ -56,6 +56,7 @@ const cases: SmokeCase[] = [
           pageUrl: "https://synthetic.example/consent",
           excerpt:
             "Я даю согласие на обработку моих персональных данных для подготовки ответа на мое обращение и обратной связи по заявке.",
+          completeness: "PARTIAL",
           metadata: {
             factType: "consent_text",
             sourceUrl: "https://synthetic.example/consent"
@@ -80,6 +81,7 @@ const cases: SmokeCase[] = [
           evidenceType: "TEXT_FRAGMENT",
           pageUrl: "https://synthetic.example/consent",
           excerpt: "Я даю согласие на обработку моих персональных данных.",
+          completeness: "COMPLETE",
           metadata: {
             factType: "consent_text",
             sourceUrl: "https://synthetic.example/consent"
