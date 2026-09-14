@@ -1,5 +1,6 @@
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { loadLocalEnv } from "@/config/env";
 import { getPool } from "./client";
 
@@ -18,7 +19,9 @@ export async function runMigrations(): Promise<void> {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1].replace(/\\/g, "/")}`) {
+const cliEntryUrl = process.argv[1] ? pathToFileURL(path.resolve(process.argv[1])).href : undefined;
+
+if (import.meta.url === cliEntryUrl) {
   runMigrations()
     .then(async () => {
       await getPool().end();
