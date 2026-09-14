@@ -2,9 +2,11 @@ import { randomUUID } from "node:crypto";
 import type { Fact } from "@/facts/types";
 import type { Evidence, EvidenceType } from "@/evidence/types";
 import type { Finding } from "@/findings/types";
+import { validateOwnerAnswer } from "@/owner-context/answers";
+import { OWNER_ANSWER_PROVENANCE, type OwnerAnswerValue } from "@/owner-context/types";
 import type { RuleEvaluation } from "@/rule-engine/types";
 import type { Queryable } from "./client";
-import type { FindingStatus, Scan, Severity, Site, SiteType, User } from "./schema";
+import type { FindingStatus, OwnerAnswer, Scan, Severity, Site, SiteType, User } from "./schema";
 
 type UserRow = {
   id: string;
@@ -65,6 +67,16 @@ type FindingRow = {
   remediation: string;
   missing_context: string[];
   created_at: Date;
+};
+
+type OwnerAnswerRow = {
+  id: string;
+  scan_id: string;
+  question_id: string;
+  answer_json: OwnerAnswerValue;
+  provenance: typeof OWNER_ANSWER_PROVENANCE;
+  answered_at: Date;
+  updated_at: Date;
 };
 
 function mapUser(row: UserRow): User {
@@ -137,6 +149,18 @@ function mapFinding(row: FindingRow): Finding {
     remediation: row.remediation,
     missingContext: row.missing_context,
     createdAt: row.created_at
+  };
+}
+
+function mapOwnerAnswer(row: OwnerAnswerRow): OwnerAnswer {
+  return {
+    id: row.id,
+    scanId: row.scan_id,
+    questionId: row.question_id,
+    answer: row.answer_json,
+    provenance: row.provenance,
+    answeredAt: row.answered_at,
+    updatedAt: row.updated_at
   };
 }
 
@@ -441,6 +465,50 @@ export async function createFinding(
   }
 
   return mapFinding(result.rows[0]);
+}
+
+export async function upsertOwnerAnswer(
+  db: Queryable,
+  input: { scanId: string; questionId: string; answer: OwnerAnswerValue }
+): Promise<OwnerAnswer> {
+  validateOwnerAnswer(input.questionId, input.answer);
+
+  const result = await db.query<OwnerAnswerRow>(
+    `
+      insert into owner_answers (
+        id,
+        scan_id,
+        question_id,
+        answer_json,
+        provenance,
+        answered_at,
+        updated_at
+      )
+      values ($1, $2, $3, $4, 'OWNER', now(), now())
+      on conflict (scan_id, question_id) do update
+        set answer_json = excluded.answer_json,
+            provenance = 'OWNER',
+            updated_at = now()
+      returning *
+    `,
+    [randomUUID(), input.scanId, input.questionId, input.answer]
+  );
+
+  return mapOwnerAnswer(result.rows[0]);
+}
+
+export async function getOwnerAnswersForScan(db: Queryable, scanId: string): Promise<OwnerAnswer[]> {
+  const result = await db.query<OwnerAnswerRow>(
+    `
+      select *
+      from owner_answers
+      where scan_id = $1
+      order by answered_at asc, question_id asc
+    `,
+    [scanId]
+  );
+
+  return result.rows.map(mapOwnerAnswer);
 }
 
 export async function linkFindingEvidence(

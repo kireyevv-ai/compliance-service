@@ -1,3 +1,5 @@
+import type { OWNER_ANSWER_PROVENANCE, OwnerAnswerValue } from "@/owner-context/types";
+
 export const SITE_TYPES = ["B2B", "B2C_SERVICE", "ECOMMERCE", "OTHER"] as const;
 export type SiteType = (typeof SITE_TYPES)[number];
 
@@ -34,4 +36,14 @@ export interface Scan {
   startedAt: Date | null;
   finishedAt: Date | null;
   createdAt: Date;
+}
+
+export interface OwnerAnswer {
+  id: string;
+  scanId: string;
+  questionId: string;
+  answer: OwnerAnswerValue;
+  provenance: typeof OWNER_ANSWER_PROVENANCE;
+  answeredAt: Date;
+  updatedAt: Date;
 }
