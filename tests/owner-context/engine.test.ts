@@ -69,18 +69,26 @@ function answer(questionId: string, value: OwnerAnswerValue): OwnerAnswer {
 
 function context(input: {
   siteType?: SiteType;
-  facts?: Fact[];
-  answers?: OwnerAnswer[];
+  facts?: readonly Fact[];
+  answers?: readonly OwnerAnswer[];
 } = {}): OwnerContextInput {
   return {
     siteType: input.siteType ?? "B2B",
-    facts: input.facts ?? [],
-    answers: input.answers ?? []
+    facts: [...(input.facts ?? [])],
+    answers: [...(input.answers ?? [])]
   };
 }
 
 function statusFor(result: ReturnType<typeof evaluateOwnerRules>, ruleId: string) {
   return result.find((item) => item.ruleId === ruleId)?.status;
+}
+
+function evaluationFor(result: ReturnType<typeof evaluateOwnerRules>, ruleId: string) {
+  const evaluation = result.find((item) => item.ruleId === ruleId);
+  if (!evaluation) {
+    throw new Error(`Missing evaluation for ${ruleId}`);
+  }
+  return evaluation;
 }
 
 describe("owner question registry", () => {
@@ -393,5 +401,423 @@ describe("owner context engine", () => {
 
     expect(evaluation.status).toBe("MANUAL_CHECK");
     expect(evaluation.reasonCode).toBe("RULE_POLICY_REQUIRES_MANUAL_CHECK");
+  });
+
+  it.each([
+    {
+      ruleId: "PD-007",
+      facts: [fact("personal_data_collection_found")],
+      answers: [
+        answer("Q_PD_COLLECTION_LEGAL_BASIS", {
+          type: "SINGLE_SELECT",
+          optionId: "SEPARATE_CONSENT"
+        })
+      ],
+      expectedStatus: "PASS"
+    },
+    {
+      ruleId: "PD-012",
+      facts: [fact("marketing_subscription_detected")],
+      answers: [
+        answer("Q_MARKETING_CONSENT_PROOF", {
+          type: "SINGLE_SELECT",
+          optionId: "PROOF_STORED"
+        })
+      ],
+      expectedStatus: "PASS"
+    },
+    {
+      ruleId: "PD-022",
+      facts: [fact("personal_data_collection_found"), fact("foreign_provider_signal_found")],
+      answers: [
+        answer("Q_PD_PRIMARY_DB_LOCATION", {
+          type: "SINGLE_SELECT",
+          optionId: "RU_FIRST"
+        })
+      ],
+      expectedStatus: "PASS"
+    },
+    {
+      ruleId: "PD-023",
+      facts: [fact("personal_data_collection_found"), fact("seller_legal_name_candidate")],
+      answers: [
+        answer("Q_PD_OPERATOR_RKN_NOTIFICATION", {
+          type: "SINGLE_SELECT",
+          optionId: "REGISTRY_PRESENT"
+        })
+      ],
+      expectedStatus: "MANUAL_CHECK",
+      expectedReasonCode: "RULE_POLICY_REQUIRES_MANUAL_CHECK"
+    },
+    {
+      ruleId: "ADV-001",
+      facts: [fact("ad_candidate_detected"), fact("ad_label_text_found", { found: false })],
+      answers: [
+        answer("Q_AD_MATERIAL_QUALIFICATION", {
+          type: "SINGLE_SELECT",
+          optionId: "IS_INTERNET_AD"
+        })
+      ],
+      expectedStatus: "MANUAL_CHECK",
+      expectedReasonCode: "RULE_POLICY_REQUIRES_MANUAL_CHECK"
+    },
+    {
+      ruleId: "ADV-002",
+      facts: [fact("ad_candidate_detected"), fact("advertiser_identity_or_link_found", { found: false })],
+      answers: [
+        answer("Q_AD_MATERIAL_QUALIFICATION", {
+          type: "SINGLE_SELECT",
+          optionId: "IS_INTERNET_AD"
+        })
+      ],
+      expectedStatus: "MANUAL_CHECK",
+      expectedReasonCode: "RULE_POLICY_REQUIRES_MANUAL_CHECK"
+    },
+    {
+      ruleId: "ADV-003",
+      facts: [fact("ad_candidate_detected"), fact("erid_token_candidate", { found: false })],
+      answers: [
+        answer("Q_AD_MATERIAL_QUALIFICATION", {
+          type: "SINGLE_SELECT",
+          optionId: "IS_INTERNET_AD"
+        })
+      ],
+      expectedStatus: "MANUAL_CHECK",
+      expectedReasonCode: "RULE_POLICY_REQUIRES_MANUAL_CHECK"
+    },
+    {
+      ruleId: "ADV-004",
+      facts: [fact("rendered_marketing_consent_found")],
+      answers: [
+        answer("Q_MARKETING_CONSENT_PROOF", {
+          type: "SINGLE_SELECT",
+          optionId: "PROOF_STORED"
+        })
+      ],
+      expectedStatus: "PASS"
+    },
+    {
+      ruleId: "AUTH-001",
+      facts: [fact("auth_ui_static_signal")],
+      answers: [
+        answer("Q_AUTH_OWNER_STATUS", {
+          type: "SINGLE_SELECT",
+          optionId: "RUSSIAN_OWNER"
+        }),
+        answer("Q_AUTH_METHODS", {
+          type: "MULTI_SELECT",
+          optionIds: ["ESIA", "ALLOWED_RU_METHOD"]
+        })
+      ],
+      expectedStatus: "PASS"
+    },
+    {
+      ruleId: "REC-001",
+      facts: [fact("recommendation_technology_suspected"), fact("recommendation_notice_candidate", { found: false })],
+      answers: [
+        answer("Q_RECOMMENDER_TECH_USE", {
+          type: "SINGLE_SELECT",
+          optionId: "USES_RECOMMENDER_TECH"
+        })
+      ],
+      expectedStatus: "MANUAL_CHECK",
+      expectedReasonCode: "RULE_POLICY_REQUIRES_MANUAL_CHECK"
+    },
+    {
+      ruleId: "REC-002",
+      facts: [fact("recommendation_technology_suspected"), fact("recommendation_rules_document_link", { found: false })],
+      answers: [
+        answer("Q_RECOMMENDER_TECH_USE", {
+          type: "SINGLE_SELECT",
+          optionId: "USES_RECOMMENDER_TECH"
+        })
+      ],
+      expectedStatus: "MANUAL_CHECK",
+      expectedReasonCode: "RULE_POLICY_REQUIRES_MANUAL_CHECK"
+    },
+    {
+      ruleId: "REC-004",
+      facts: [
+        fact("recommendation_technology_suspected"),
+        fact("owner_contact_for_recommender_requirements_missing", { found: false })
+      ],
+      answers: [
+        answer("Q_RECOMMENDER_TECH_USE", {
+          type: "SINGLE_SELECT",
+          optionId: "USES_RECOMMENDER_TECH"
+        })
+      ],
+      expectedStatus: "MANUAL_CHECK",
+      expectedReasonCode: "RULE_POLICY_REQUIRES_MANUAL_CHECK"
+    },
+    {
+      ruleId: "LANG-002",
+      siteType: "ECOMMERCE",
+      facts: [fact("public_non_ad_consumer_info_foreign_only")],
+      answers: [
+        answer("Q_LANGUAGE_EXCEPTION", {
+          type: "SINGLE_SELECT",
+          optionId: "NO_EXCEPTION"
+        })
+      ],
+      expectedStatus: "WARNING"
+    }
+  ] as const)("executes applicable happy path for $ruleId", (scenario) => {
+    const evaluation = evaluationFor(
+      evaluateOwnerRules(
+        context({
+          siteType: scenario.siteType,
+          facts: scenario.facts,
+          answers: scenario.answers
+        })
+      ),
+      scenario.ruleId
+    );
+
+    expect(evaluation.applicability).toBe("REQUIRED");
+    expect(evaluation.status).toBe(scenario.expectedStatus);
+    expect(evaluation.reasonCode).toBe(scenario.expectedReasonCode);
+    expect(evaluation.ownerAnswerRefs.length).toBeGreaterThan(0);
+    expect(evaluation.siteEvidenceRefs).toEqual(evaluation.siteFactRefs);
+  });
+
+  it.each([
+    ["PD-007", [fact("personal_data_collection_found")], "Q_PD_COLLECTION_LEGAL_BASIS", undefined],
+    ["PD-012", [fact("marketing_subscription_detected")], "Q_MARKETING_CONSENT_PROOF", undefined],
+    ["PD-022", [fact("personal_data_collection_found")], "Q_PD_PRIMARY_DB_LOCATION", undefined],
+    ["PD-023", [fact("personal_data_collection_found"), fact("seller_legal_name_candidate")], "Q_PD_OPERATOR_RKN_NOTIFICATION", undefined],
+    ["ADV-001", [fact("ad_candidate_detected")], "Q_AD_MATERIAL_QUALIFICATION", undefined],
+    ["ADV-002", [fact("ad_candidate_detected")], "Q_AD_MATERIAL_QUALIFICATION", undefined],
+    ["ADV-003", [fact("ad_candidate_detected")], "Q_AD_MATERIAL_QUALIFICATION", undefined],
+    ["ADV-004", [fact("marketing_subscription_detected")], "Q_MARKETING_CONSENT_PROOF", undefined],
+    ["AUTH-001", [fact("auth_ui_static_signal")], "Q_AUTH_OWNER_STATUS", undefined],
+    ["REC-001", [fact("recommendation_technology_suspected")], "Q_RECOMMENDER_TECH_USE", undefined],
+    ["REC-002", [fact("recommendation_technology_suspected")], "Q_RECOMMENDER_TECH_USE", undefined],
+    ["REC-004", [fact("recommendation_technology_suspected")], "Q_RECOMMENDER_TECH_USE", undefined],
+    ["LANG-002", [fact("public_non_ad_consumer_info_foreign_only")], "Q_LANGUAGE_EXCEPTION", "ECOMMERCE"]
+  ] as const)("keeps unanswered applicable %s unresolved", (ruleId, facts, questionId, siteType) => {
+    const evaluation = evaluationFor(evaluateOwnerRules(context({ siteType, facts })), ruleId);
+
+    expect(evaluation.applicability).toBe("REQUIRED");
+    expect(evaluation.status).toBe("UNRESOLVED");
+    expect(evaluation.reasonCode).toBe("ANSWER_REQUIRED");
+    expect(evaluation.questionIds).toContain(questionId);
+  });
+
+  it.each([
+    ["PD-007", [fact("personal_data_collection_found")], "Q_PD_COLLECTION_LEGAL_BASIS", undefined],
+    ["PD-012", [fact("marketing_subscription_detected")], "Q_MARKETING_CONSENT_PROOF", undefined],
+    ["PD-022", [fact("personal_data_collection_found")], "Q_PD_PRIMARY_DB_LOCATION", undefined],
+    ["PD-023", [fact("personal_data_collection_found"), fact("seller_legal_name_candidate")], "Q_PD_OPERATOR_RKN_NOTIFICATION", undefined],
+    ["ADV-001", [fact("ad_candidate_detected")], "Q_AD_MATERIAL_QUALIFICATION", undefined],
+    ["ADV-002", [fact("ad_candidate_detected")], "Q_AD_MATERIAL_QUALIFICATION", undefined],
+    ["ADV-003", [fact("ad_candidate_detected")], "Q_AD_MATERIAL_QUALIFICATION", undefined],
+    ["ADV-004", [fact("marketing_subscription_detected")], "Q_MARKETING_CONSENT_PROOF", undefined],
+    ["REC-001", [fact("recommendation_technology_suspected")], "Q_RECOMMENDER_TECH_USE", undefined],
+    ["REC-002", [fact("recommendation_technology_suspected")], "Q_RECOMMENDER_TECH_USE", undefined],
+    ["REC-004", [fact("recommendation_technology_suspected")], "Q_RECOMMENDER_TECH_USE", undefined],
+    ["LANG-002", [fact("public_non_ad_consumer_info_foreign_only")], "Q_LANGUAGE_EXCEPTION", "ECOMMERCE"]
+  ] as const)("turns unknown answer for %s into MANUAL_CHECK", (ruleId, facts, questionId, siteType) => {
+    const evaluation = evaluationFor(
+      evaluateOwnerRules(
+        context({
+          siteType,
+          facts,
+          answers: [answer(questionId, { unknown: true })]
+        })
+      ),
+      ruleId
+    );
+
+    expect(evaluation.applicability).toBe("REQUIRED");
+    expect(evaluation.status).toBe("MANUAL_CHECK");
+    expect(evaluation.reasonCode).toBe("OWNER_UNKNOWN");
+  });
+
+  it.each([
+    ["PD-007", "B2B", [], "NOT_APPLICABLE"],
+    ["PD-012", "B2B", [], "NOT_APPLICABLE"],
+    ["PD-022", "B2B", [], "NOT_APPLICABLE"],
+    ["PD-023", "B2B", [fact("personal_data_collection_found")], "UNRESOLVED"],
+    ["ADV-001", "B2B", [], "UNRESOLVED"],
+    ["ADV-002", "B2B", [], "UNRESOLVED"],
+    ["ADV-003", "B2B", [], "UNRESOLVED"],
+    ["ADV-004", "B2B", [], "NOT_APPLICABLE"],
+    ["AUTH-001", "B2B", [], "NOT_APPLICABLE"],
+    ["REC-001", "B2B", [], "UNRESOLVED"],
+    ["REC-002", "B2B", [], "UNRESOLVED"],
+    ["REC-004", "B2B", [], "UNRESOLVED"],
+    ["LANG-002", "ECOMMERCE", [fact("page_language_signal")], "UNRESOLVED"]
+  ] as const)("returns not applicable or unresolved applicability for %s", (ruleId, siteType, facts, expectedStatus) => {
+    const evaluation = evaluationFor(evaluateOwnerRules(context({ siteType, facts })), ruleId);
+
+    expect(evaluation.status).toBe(expectedStatus);
+    if (expectedStatus === "UNRESOLVED") {
+      expect(evaluation.reasonCode).toBe("APPLICABILITY_UNRESOLVED");
+    }
+  });
+
+  it.each([
+    [
+      "PD-007",
+      [fact("personal_data_collection_found")],
+      answer("Q_PD_COLLECTION_LEGAL_BASIS", { type: "SINGLE_SELECT", optionId: "NO_PD_PROCESSING" }),
+      undefined
+    ],
+    [
+      "PD-012",
+      [fact("marketing_subscription_detected")],
+      answer("Q_MARKETING_CONSENT_PROOF", { type: "SINGLE_SELECT", optionId: "NO_MARKETING" }),
+      undefined
+    ],
+    [
+      "ADV-001",
+      [fact("ad_label_text_found")],
+      answer("Q_AD_MATERIAL_QUALIFICATION", { type: "SINGLE_SELECT", optionId: "NOT_AD" }),
+      undefined
+    ],
+    [
+      "ADV-002",
+      [fact("erid_token_candidate")],
+      answer("Q_AD_MATERIAL_QUALIFICATION", { type: "SINGLE_SELECT", optionId: "NOT_AD" }),
+      undefined
+    ],
+    [
+      "ADV-003",
+      [fact("erid_token_candidate")],
+      answer("Q_AD_MATERIAL_QUALIFICATION", { type: "SINGLE_SELECT", optionId: "NOT_AD" }),
+      undefined
+    ],
+    [
+      "AUTH-001",
+      [fact("auth_ui_static_signal")],
+      answer("Q_AUTH_METHODS", { type: "MULTI_SELECT", optionIds: ["NO_AUTH"] }),
+      answer("Q_AUTH_OWNER_STATUS", { type: "SINGLE_SELECT", optionId: "RUSSIAN_OWNER" })
+    ],
+    [
+      "REC-001",
+      [fact("recommendation_technology_suspected")],
+      answer("Q_RECOMMENDER_TECH_USE", { type: "SINGLE_SELECT", optionId: "NO_RECOMMENDER_TECH" }),
+      undefined
+    ],
+    [
+      "REC-002",
+      [fact("recommendation_technology_suspected")],
+      answer("Q_RECOMMENDER_TECH_USE", { type: "SINGLE_SELECT", optionId: "BASIC_SORTING_ONLY" }),
+      undefined
+    ],
+    [
+      "REC-004",
+      [fact("recommendation_technology_suspected")],
+      answer("Q_RECOMMENDER_TECH_USE", { type: "SINGLE_SELECT", optionId: "NO_RECOMMENDER_TECH" }),
+      undefined
+    ]
+  ] as const)("detects supported reality-check conflict for %s", (ruleId, facts, primaryAnswer, prerequisiteAnswer) => {
+    const evaluation = evaluationFor(
+      evaluateOwnerRules(
+        context({
+          facts,
+          answers: prerequisiteAnswer ? [prerequisiteAnswer, primaryAnswer] : [primaryAnswer]
+        })
+      ),
+      ruleId
+    );
+
+    expect(evaluation.status).toBe("MANUAL_CHECK");
+    expect(evaluation.reasonCode).toBe("OWNER_ANSWER_CONFLICTS_WITH_SITE_EVIDENCE");
+    expect(evaluation.conflictDetected).toBe(true);
+    expect(evaluation.siteEvidenceRefs.length).toBeGreaterThan(0);
+  });
+
+  it("does not conflict PD-022 on foreign provider signal alone", () => {
+    const evaluation = evaluationFor(
+      evaluateOwnerRules(
+        context({
+          facts: [fact("personal_data_collection_found"), fact("foreign_provider_signal_found")],
+          answers: [
+            answer("Q_PD_PRIMARY_DB_LOCATION", {
+              type: "SINGLE_SELECT",
+              optionId: "RU_FIRST"
+            })
+          ]
+        })
+      ),
+      "PD-022"
+    );
+
+    expect(evaluation.status).toBe("PASS");
+    expect(evaluation.conflictDetected).toBe(false);
+  });
+
+  it("keeps PD-023 registry-present answer at MANUAL_CHECK until registry integration exists", () => {
+    const evaluation = evaluationFor(
+      evaluateOwnerRules(
+        context({
+          facts: [fact("personal_data_collection_found"), fact("seller_legal_name_candidate")],
+          answers: [
+            answer("Q_PD_OPERATOR_RKN_NOTIFICATION", {
+              type: "SINGLE_SELECT",
+              optionId: "REGISTRY_PRESENT"
+            })
+          ]
+        })
+      ),
+      "PD-023"
+    );
+
+    expect(evaluation.status).toBe("MANUAL_CHECK");
+    expect(evaluation.reasonCode).toBe("RULE_POLICY_REQUIRES_MANUAL_CHECK");
+  });
+
+  it("uses one ad qualification answer for ADV-001, ADV-002, and ADV-003", () => {
+    const result = evaluateOwnerRules(
+      context({
+        facts: [
+          fact("ad_candidate_detected"),
+          fact("ad_label_text_found", { found: false }),
+          fact("advertiser_identity_or_link_found", { found: false }),
+          fact("erid_token_candidate", { found: false })
+        ],
+        answers: [
+          answer("Q_AD_MATERIAL_QUALIFICATION", {
+            type: "SINGLE_SELECT",
+            optionId: "IS_INTERNET_AD"
+          })
+        ]
+      })
+    );
+
+    for (const ruleId of ["ADV-001", "ADV-002", "ADV-003"]) {
+      expect(evaluationFor(result, ruleId).status).toBe("MANUAL_CHECK");
+      expect(evaluationFor(result, ruleId).ownerAnswerRefs).toEqual([
+        { questionId: "Q_AD_MATERIAL_QUALIFICATION", answerId: "Q_AD_MATERIAL_QUALIFICATION-answer" }
+      ]);
+    }
+  });
+
+  it("uses one recommender answer for REC-001, REC-002, and REC-004", () => {
+    const result = evaluateOwnerRules(
+      context({
+        facts: [
+          fact("recommendation_technology_suspected"),
+          fact("recommendation_notice_candidate", { found: false }),
+          fact("recommendation_rules_document_link", { found: false }),
+          fact("owner_contact_for_recommender_requirements_missing", { found: false })
+        ],
+        answers: [
+          answer("Q_RECOMMENDER_TECH_USE", {
+            type: "SINGLE_SELECT",
+            optionId: "USES_RECOMMENDER_TECH"
+          })
+        ]
+      })
+    );
+
+    for (const ruleId of ["REC-001", "REC-002", "REC-004"]) {
+      expect(evaluationFor(result, ruleId).status).toBe("MANUAL_CHECK");
+      expect(evaluationFor(result, ruleId).ownerAnswerRefs).toEqual([
+        { questionId: "Q_RECOMMENDER_TECH_USE", answerId: "Q_RECOMMENDER_TECH_USE-answer" }
+      ]);
+    }
   });
 });

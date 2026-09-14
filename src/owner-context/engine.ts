@@ -129,7 +129,7 @@ export const OWNER_RULE_MAPPINGS: OwnerRuleMapping[] = [
 ];
 
 export function evaluateOwnerRules(context: OwnerContextInput): OwnerRuleEvaluation[] {
-  return OWNER_RULE_MAPPINGS.map((mapping) => mapping.evaluate(context));
+  return OWNER_RULE_MAPPINGS.map((mapping) => withOutputContract(mapping.evaluate(context), context));
 }
 
 export function getOwnerQuestionApplicability(
@@ -147,7 +147,7 @@ export function getOwnerQuestionApplicability(
         ? "REQUIRED"
         : "UNRESOLVED";
     case "Q_AD_MATERIAL_QUALIFICATION":
-      return hasAnyFact(context.facts, AD_SIGNAL_FACTS) ? "REQUIRED" : "UNRESOLVED";
+      return hasPositiveFact(context.facts, AD_SIGNAL_FACTS) ? "REQUIRED" : "UNRESOLVED";
     case "Q_AUTH_OWNER_STATUS":
       return hasAnyFact(context.facts, AUTH_SIGNAL_FACTS) ? "REQUIRED" : "NOT_NEEDED";
     case "Q_AUTH_METHODS":
@@ -158,7 +158,9 @@ export function getOwnerQuestionApplicability(
       if (!["B2C_SERVICE", "ECOMMERCE"].includes(context.siteType)) {
         return "NOT_NEEDED";
       }
-      return hasPositiveFact(context.facts, LANGUAGE_SIGNAL_FACTS) ? "REQUIRED" : "UNRESOLVED";
+      return hasPositiveFact(context.facts, new Set(["public_non_ad_consumer_info_foreign_only"]))
+        ? "REQUIRED"
+        : "UNRESOLVED";
     default:
       throw new Error(`Unknown owner question: ${questionId}`);
   }
@@ -274,7 +276,7 @@ function evaluateRknNotification(context: OwnerContextInput): OwnerRuleEvaluatio
 
   const option = singleOption(answer.answer);
   if (option === "REGISTRY_PRESENT" || option === "SUBMITTED_NOT_LISTED") {
-    return evaluated(ruleId, questionIds, "PASS", answer.answer, siteRefs, "Владелец указал, что уведомление подано.");
+    return manual(ruleId, questionIds, "RULE_POLICY_REQUIRES_MANUAL_CHECK", answer.answer, siteRefs);
   }
   if (option === "NOT_SUBMITTED") {
     return evaluated(ruleId, questionIds, "WARNING", answer.answer, siteRefs, "Владелец указал, что уведомление не подано.");
@@ -299,7 +301,7 @@ function evaluateAdRule(ruleId: string, missingFactType: string, context: OwnerC
   }
 
   const option = singleOption(answer.answer);
-  if (option === "NOT_AD" && hasAnyFact(context.facts, new Set(["ad_label_text_found", "erid_token_candidate"]))) {
+  if (option === "NOT_AD" && hasPositiveFact(context.facts, new Set(["ad_label_text_found", "erid_token_candidate"]))) {
     return conflict(ruleId, questionIds, answer.answer, siteRefs);
   }
   if (option === "NOT_AD") {
@@ -476,18 +478,26 @@ function applicabilityResult(
   if (applicability === "NOT_NEEDED") {
     return {
       ruleId,
+      applicability: "NOT_NEEDED",
       status: "NOT_APPLICABLE",
       questionIds,
+      ownerAnswerRefs: [],
+      siteEvidenceRefs: [],
       siteFactRefs: [],
+      conflictDetected: false,
       explanation: "Owner context для этого правила не нужен по текущим site facts."
     };
   }
   return {
     ruleId,
+    applicability: "UNRESOLVED",
     status: "UNRESOLVED",
     questionIds,
     reasonCode: "APPLICABILITY_UNRESOLVED",
+    ownerAnswerRefs: [],
+    siteEvidenceRefs: [],
     siteFactRefs: [],
+    conflictDetected: false,
     explanation: "Применимость правила зависит от ещё не подтверждённых facts/evidence."
   };
 }
@@ -495,10 +505,14 @@ function applicabilityResult(
 function answerRequired(ruleId: string, questionIds: string[]): OwnerRuleEvaluation {
   return {
     ruleId,
+    applicability: "REQUIRED",
     status: "UNRESOLVED",
     questionIds,
     reasonCode: "ANSWER_REQUIRED",
+    ownerAnswerRefs: [],
+    siteEvidenceRefs: [],
     siteFactRefs: [],
+    conflictDetected: false,
     explanation: "Для оценки правила нужен обязательный owner answer."
   };
 }
@@ -539,5 +553,30 @@ function evaluated(
   explanation: string,
   reasonCode?: OwnerReasonCode
 ): OwnerRuleEvaluation {
-  return { ruleId, status, questionIds, reasonCode, ownerAnswer, siteFactRefs, explanation };
+  return {
+    ruleId,
+    applicability: "REQUIRED",
+    status,
+    questionIds,
+    reasonCode,
+    ownerAnswer,
+    ownerAnswerRefs: [],
+    siteEvidenceRefs: siteFactRefs,
+    siteFactRefs,
+    conflictDetected: reasonCode === "OWNER_ANSWER_CONFLICTS_WITH_SITE_EVIDENCE",
+    explanation
+  };
+}
+
+function withOutputContract(evaluation: OwnerRuleEvaluation, context: OwnerContextInput): OwnerRuleEvaluation {
+  const ownerAnswerRefs = context.answers
+    .filter((answer) => evaluation.questionIds.includes(answer.questionId))
+    .map((answer) => ({ questionId: answer.questionId, answerId: answer.id }));
+
+  return {
+    ...evaluation,
+    ownerAnswerRefs,
+    siteEvidenceRefs: evaluation.siteFactRefs,
+    conflictDetected: evaluation.reasonCode === "OWNER_ANSWER_CONFLICTS_WITH_SITE_EVIDENCE"
+  };
 }

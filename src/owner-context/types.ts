@@ -54,6 +54,11 @@ export interface SiteFactRef {
   pageUrl?: string;
 }
 
+export interface OwnerAnswerRef {
+  questionId: string;
+  answerId: string;
+}
+
 export interface OwnerContextInput {
   siteType: SiteType;
   facts: Fact[];
@@ -69,10 +74,14 @@ export interface OwnerRuleMapping {
 
 export interface OwnerRuleEvaluation {
   ruleId: string;
+  applicability: OwnerApplicabilityStatus;
   status: OwnerEvaluationStatus;
   questionIds: string[];
   reasonCode?: OwnerReasonCode;
   ownerAnswer?: OwnerAnswerValue;
+  ownerAnswerRefs: OwnerAnswerRef[];
+  siteEvidenceRefs: SiteFactRef[];
   siteFactRefs: SiteFactRef[];
+  conflictDetected: boolean;
   explanation: string;
 }
