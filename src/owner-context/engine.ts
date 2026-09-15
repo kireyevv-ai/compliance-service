@@ -184,24 +184,35 @@ function evaluatePdLegalBasis(ruleId: string, context: OwnerContextInput): Owner
     return applicabilityResult(ruleId, ["Q_PD_COLLECTION_LEGAL_BASIS"], applicability);
   }
 
-  const answer = answerFor(context, "Q_PD_COLLECTION_LEGAL_BASIS");
-  if (!answer) {
+  const pdContextKeys = pdCollectionContextKeys(context.facts);
+  const answers = pdContextKeys.map(
+    (contextKey) =>
+      answerFor(context, "Q_PD_COLLECTION_LEGAL_BASIS", contextKey) ??
+      (pdContextKeys.length === 1 ? answerFor(context, "Q_PD_COLLECTION_LEGAL_BASIS", "") : undefined)
+  );
+  const siteRefs = refs(context.facts, PD_COLLECTION_FACTS);
+  if (answers.some((answer) => !answer)) {
     return answerRequired(ruleId, ["Q_PD_COLLECTION_LEGAL_BASIS"]);
   }
-  if ("unknown" in answer.answer) {
-    return manual(ruleId, ["Q_PD_COLLECTION_LEGAL_BASIS"], "OWNER_UNKNOWN", answer.answer, refs(context.facts, PD_COLLECTION_FACTS));
+  for (const answer of answers) {
+    if (!answer) {
+      continue;
+    }
+    if ("unknown" in answer.answer) {
+      return manual(ruleId, ["Q_PD_COLLECTION_LEGAL_BASIS"], "OWNER_UNKNOWN", answer.answer, siteRefs);
+    }
+    const option = singleOption(answer.answer);
+    if (option === "NO_PD_PROCESSING") {
+      return conflict(ruleId, ["Q_PD_COLLECTION_LEGAL_BASIS"], answer.answer, siteRefs);
+    }
+    if (option === "NO_BASIS") {
+      return evaluated(ruleId, ["Q_PD_COLLECTION_LEGAL_BASIS"], "FAIL", answer.answer, siteRefs, "Владелец указал, что правового основания обработки нет.");
+    }
+    if (!VALID_BASIS_OPTIONS.has(option)) {
+      return manual(ruleId, ["Q_PD_COLLECTION_LEGAL_BASIS"], "OWNER_UNKNOWN", answer.answer, siteRefs);
+    }
   }
-  const option = singleOption(answer.answer);
-  if (option === "NO_PD_PROCESSING" && hasPositiveFact(context.facts, PD_COLLECTION_FACTS)) {
-    return conflict(ruleId, ["Q_PD_COLLECTION_LEGAL_BASIS"], answer.answer, refs(context.facts, PD_COLLECTION_FACTS));
-  }
-  if (VALID_BASIS_OPTIONS.has(option)) {
-    return evaluated(ruleId, ["Q_PD_COLLECTION_LEGAL_BASIS"], "PASS", answer.answer, refs(context.facts, PD_COLLECTION_FACTS), "Владелец указал правовое основание обработки.");
-  }
-  if (option === "NO_BASIS") {
-    return evaluated(ruleId, ["Q_PD_COLLECTION_LEGAL_BASIS"], "FAIL", answer.answer, refs(context.facts, PD_COLLECTION_FACTS), "Владелец указал, что правового основания обработки нет.");
-  }
-  return manual(ruleId, ["Q_PD_COLLECTION_LEGAL_BASIS"], "OWNER_UNKNOWN", answer.answer, refs(context.facts, PD_COLLECTION_FACTS));
+  return evaluated(ruleId, ["Q_PD_COLLECTION_LEGAL_BASIS"], "PASS", answers[0]!.answer, siteRefs, "Владелец указал правовое основание обработки для всех найденных форм.");
 }
 
 function evaluateMarketingConsent(ruleId: string, context: OwnerContextInput): OwnerRuleEvaluation {
@@ -423,8 +434,8 @@ function authMethodsApplicability(context: OwnerContextInput): OwnerApplicabilit
   return singleOption(ownerAnswer.answer) === "RUSSIAN_OWNER" ? "REQUIRED" : "NOT_NEEDED";
 }
 
-function answerFor(context: OwnerContextInput, questionId: string): OwnerAnswer | undefined {
-  return context.answers.find((answer) => answer.questionId === questionId);
+function answerFor(context: OwnerContextInput, questionId: string, contextKey = ""): OwnerAnswer | undefined {
+  return context.answers.find((answer) => answer.questionId === questionId && (answer.contextKey ?? "") === contextKey);
 }
 
 function singleOption(answer: OwnerAnswerValue): string {
@@ -462,6 +473,25 @@ function factIsPositive(fact: Fact): boolean {
     return false;
   }
   return fact.value.found === true || fact.value.detected === true || fact.value.candidate === true || Object.keys(fact.value).length > 0;
+}
+
+function pdCollectionContextKeys(facts: Fact[]): string[] {
+  const keys = facts
+    .filter((fact) => PD_COLLECTION_FACTS.has(fact.factType) && factIsPositive(fact))
+    .map((fact) => String(fact.value.contextKey ?? normalizedPage(fact.pageUrl) ?? fact.id));
+  return [...new Set(keys)];
+}
+
+function normalizedPage(pageUrl: string | undefined): string | undefined {
+  if (!pageUrl) {
+    return undefined;
+  }
+  try {
+    const url = new URL(pageUrl);
+    return `${url.pathname}${url.search}` || "/";
+  } catch {
+    return pageUrl;
+  }
 }
 
 function refs(facts: Fact[], factTypes: Set<string>): SiteFactRef[] {

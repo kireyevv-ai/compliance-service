@@ -367,6 +367,132 @@ p {
   margin: 0;
 }
 
+.owner-context-shell {
+  max-width: 760px;
+}
+
+.owner-card {
+  display: grid;
+  gap: 20px;
+}
+
+.owner-intro p:last-child {
+  margin-bottom: 0;
+}
+
+.owner-question-card {
+  display: grid;
+  gap: 16px;
+  border-radius: 8px;
+  background: #f8f8f5;
+  padding: 18px;
+}
+
+.owner-progress {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: #65706b;
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.owner-explanation {
+  max-width: none;
+  margin-bottom: 0;
+  color: #4d5753;
+}
+
+.owner-question-context {
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 12px 14px;
+}
+
+.owner-question-context p {
+  max-width: none;
+  margin-bottom: 4px;
+  color: #4d5753;
+  font-size: 0.95rem;
+}
+
+.owner-question-context p:last-child {
+  margin-bottom: 0;
+}
+
+.owner-form-group {
+  display: grid;
+  gap: 14px;
+}
+
+.owner-form-answer {
+  display: grid;
+  gap: 12px;
+  border: 1px solid #dedfd8;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 14px;
+}
+
+.owner-form-answer .owner-question-context {
+  border: 0;
+  background: #f8f8f5;
+  padding: 0;
+}
+
+.owner-options {
+  display: grid;
+  gap: 10px;
+}
+
+.owner-option {
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  gap: 12px;
+  min-height: 44px;
+  align-items: center;
+  border: 1px solid #d9ddd5;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 10px 12px;
+  cursor: pointer;
+}
+
+.owner-option:has(input:checked) {
+  border-color: #386f63;
+  background: #f0f7f4;
+}
+
+.owner-option:has(input:focus-visible) {
+  outline: 3px solid #b8d7cb;
+  outline-offset: 2px;
+}
+
+.owner-selection {
+  margin: 0;
+  color: #59635f;
+  font-size: 0.95rem;
+}
+
+.owner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.owner-conflict {
+  border-left: 4px solid #3478b7;
+  border-radius: 8px;
+  background: #f3f8fb;
+  padding: 14px 16px;
+}
+
+.owner-conflict p {
+  max-width: none;
+  margin-bottom: 0;
+}
+
 @media (max-width: 760px) {
   .shell,
   .results-shell {
@@ -382,5 +508,10 @@ p {
   .primary-button,
   .secondary-button {
     width: 100%;
+  }
+
+  .owner-progress,
+  .owner-actions {
+    display: grid;
   }
 }

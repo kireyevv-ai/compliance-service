@@ -73,6 +73,7 @@ type OwnerAnswerRow = {
   id: string;
   scan_id: string;
   question_id: string;
+  context_key: string;
   answer_json: OwnerAnswerValue;
   provenance: typeof OWNER_ANSWER_PROVENANCE;
   answered_at: Date;
@@ -157,6 +158,7 @@ function mapOwnerAnswer(row: OwnerAnswerRow): OwnerAnswer {
     id: row.id,
     scanId: row.scan_id,
     questionId: row.question_id,
+    contextKey: row.context_key ?? "",
     answer: row.answer_json,
     provenance: row.provenance,
     answeredAt: row.answered_at,
@@ -469,7 +471,7 @@ export async function createFinding(
 
 export async function upsertOwnerAnswer(
   db: Queryable,
-  input: { scanId: string; questionId: string; answer: OwnerAnswerValue }
+  input: { scanId: string; questionId: string; answer: OwnerAnswerValue; contextKey?: string }
 ): Promise<OwnerAnswer> {
   validateOwnerAnswer(input.questionId, input.answer);
 
@@ -479,19 +481,20 @@ export async function upsertOwnerAnswer(
         id,
         scan_id,
         question_id,
+        context_key,
         answer_json,
         provenance,
         answered_at,
         updated_at
       )
-      values ($1, $2, $3, $4, 'OWNER', now(), now())
-      on conflict (scan_id, question_id) do update
+      values ($1, $2, $3, $4, $5, 'OWNER', now(), now())
+      on conflict (scan_id, question_id, context_key) do update
         set answer_json = excluded.answer_json,
             provenance = 'OWNER',
             updated_at = now()
       returning *
     `,
-    [randomUUID(), input.scanId, input.questionId, input.answer]
+    [randomUUID(), input.scanId, input.questionId, input.contextKey ?? "", input.answer]
   );
 
   return mapOwnerAnswer(result.rows[0]);
@@ -503,7 +506,7 @@ export async function getOwnerAnswersForScan(db: Queryable, scanId: string): Pro
       select *
       from owner_answers
       where scan_id = $1
-      order by answered_at asc, question_id asc
+      order by answered_at asc, question_id asc, context_key asc
     `,
     [scanId]
   );

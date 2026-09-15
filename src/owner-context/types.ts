@@ -31,10 +31,17 @@ export interface OwnerAnswer {
   id: string;
   scanId: string;
   questionId: string;
+  contextKey: string;
   answer: OwnerAnswerValue;
   provenance: typeof OWNER_ANSWER_PROVENANCE;
   answeredAt: Date;
   updatedAt: Date;
+}
+
+export interface OwnerQuestionContextSummary {
+  title: string;
+  page: string;
+  fields: string[];
 }
 
 export type OwnerApplicabilityStatus = "REQUIRED" | "NOT_NEEDED" | "UNRESOLVED";

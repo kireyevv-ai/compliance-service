@@ -5,6 +5,13 @@ import { useRouter } from "next/navigation";
 
 type ScanStatus = "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED";
 
+const SCAN_STATUS_LABELS: Record<ScanStatus, string> = {
+  QUEUED: "В очереди",
+  RUNNING: "Идёт проверка",
+  COMPLETED: "Проверка завершена",
+  FAILED: "Ошибка проверки"
+};
+
 export function ScanStatusView({ scanId }: { scanId: string }) {
   const router = useRouter();
   const [status, setStatus] = useState<ScanStatus>("QUEUED");
@@ -30,10 +37,10 @@ export function ScanStatusView({ scanId }: { scanId: string }) {
         }
 
         if (attempts < 120) {
-          setStatusNote("Обновляем статус проверки. Если страница не перейдёт дальше, откройте результаты вручную.");
+          setStatusNote("Обновляем ход проверки. Если страница не перейдёт дальше, откройте результаты вручную.");
           window.setTimeout(poll, 2000);
         } else {
-          setError("Не удалось обновить статус проверки. Обновите страницу позже.");
+          setError("Не удалось обновить ход проверки. Обновите страницу позже.");
         }
         return;
       }
@@ -43,7 +50,7 @@ export function ScanStatusView({ scanId }: { scanId: string }) {
       }
 
       if (!response.ok || !payload.scan) {
-        setError(payload.error ?? "Не удалось получить статус проверки.");
+        setError(payload.error ?? "Не удалось получить ход проверки.");
         return;
       }
 
@@ -51,7 +58,7 @@ export function ScanStatusView({ scanId }: { scanId: string }) {
       setStatusNote("Это может занять некоторое время.");
 
       if (payload.scan.status === "COMPLETED") {
-        router.replace(`/results/${scanId}`);
+        router.replace(`/owner-context/${scanId}`);
         return;
       }
 
@@ -77,7 +84,7 @@ export function ScanStatusView({ scanId }: { scanId: string }) {
   if (error) {
     return (
       <section className="panel status-panel">
-        <p className="eyebrow">FAILED</p>
+        <p className="eyebrow">Ошибка проверки</p>
         <h1>Не удалось проверить сайт</h1>
         <p>{error}</p>
         <a className="secondary-button" href="/">
@@ -90,11 +97,11 @@ export function ScanStatusView({ scanId }: { scanId: string }) {
   if (status === "COMPLETED") {
     return (
       <section className="panel status-panel">
-        <p className="eyebrow">COMPLETED</p>
+        <p className="eyebrow">Проверка завершена</p>
         <h1>Готовим результаты...</h1>
-        <p>Проверка завершена. Открываем страницу результатов.</p>
-        <a className="secondary-button" href={`/results/${scanId}`}>
-          Открыть результаты
+        <p>Проверка завершена. Проверяем, нужны ли короткие уточнения.</p>
+        <a className="secondary-button" href={`/owner-context/${scanId}`}>
+          Продолжить
         </a>
       </section>
     );
@@ -103,7 +110,7 @@ export function ScanStatusView({ scanId }: { scanId: string }) {
   return (
     <section className="panel status-panel">
       <div className="spinner" aria-hidden="true" />
-      <p className="eyebrow">{status}</p>
+      <p className="eyebrow">{SCAN_STATUS_LABELS[status]}</p>
       <h1>Проверяем сайт...</h1>
       <p>{statusNote}</p>
     </section>

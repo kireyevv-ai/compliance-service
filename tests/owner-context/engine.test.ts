@@ -23,7 +23,7 @@ import type { OwnerAnswer, OwnerAnswerValue, OwnerContextInput } from "@/owner-c
 
 function createTestDb(): Queryable {
   const db = newDb();
-  for (const file of ["001_initial_schema.sql", "002_owner_answers.sql"]) {
+  for (const file of ["001_initial_schema.sql", "002_owner_answers.sql", "003_owner_answer_context_key.sql"]) {
     db.public.none(readFileSync(path.join(process.cwd(), "src", "db", "migrations", file), "utf8"));
   }
   const adapter = db.adapters.createPg();
@@ -55,11 +55,12 @@ function hash(value: string): number {
   return [...value].reduce((acc, char) => acc + char.charCodeAt(0), 0);
 }
 
-function answer(questionId: string, value: OwnerAnswerValue): OwnerAnswer {
+function answer(questionId: string, value: OwnerAnswerValue, contextKey = ""): OwnerAnswer {
   return {
-    id: `${questionId}-answer`,
+    id: `${questionId}-${contextKey || "site"}-answer`,
     scanId: "00000000-0000-4000-8000-000000000001",
     questionId,
+    contextKey,
     answer: value,
     provenance: "OWNER",
     answeredAt: new Date("2026-09-14T12:00:00Z"),
@@ -790,7 +791,7 @@ describe("owner context engine", () => {
     for (const ruleId of ["ADV-001", "ADV-002", "ADV-003"]) {
       expect(evaluationFor(result, ruleId).status).toBe("MANUAL_CHECK");
       expect(evaluationFor(result, ruleId).ownerAnswerRefs).toEqual([
-        { questionId: "Q_AD_MATERIAL_QUALIFICATION", answerId: "Q_AD_MATERIAL_QUALIFICATION-answer" }
+        { questionId: "Q_AD_MATERIAL_QUALIFICATION", answerId: "Q_AD_MATERIAL_QUALIFICATION-site-answer" }
       ]);
     }
   });
@@ -816,7 +817,7 @@ describe("owner context engine", () => {
     for (const ruleId of ["REC-001", "REC-002", "REC-004"]) {
       expect(evaluationFor(result, ruleId).status).toBe("MANUAL_CHECK");
       expect(evaluationFor(result, ruleId).ownerAnswerRefs).toEqual([
-        { questionId: "Q_RECOMMENDER_TECH_USE", answerId: "Q_RECOMMENDER_TECH_USE-answer" }
+        { questionId: "Q_RECOMMENDER_TECH_USE", answerId: "Q_RECOMMENDER_TECH_USE-site-answer" }
       ]);
     }
   });

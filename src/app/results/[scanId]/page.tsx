@@ -25,7 +25,7 @@ export default async function ResultsPage({ params }: { params: Promise<{ scanId
     return (
       <main className="shell">
         <section className="panel status-panel">
-          <p className="eyebrow">FAILED</p>
+          <p className="eyebrow">Ошибка проверки</p>
           <h1>Не удалось проверить сайт</h1>
           <p>{userSafeScanError(result.scan.statusReason) ?? "Проверка завершилась ошибкой."}</p>
           <Link className="secondary-button" href="/">
@@ -40,11 +40,11 @@ export default async function ResultsPage({ params }: { params: Promise<{ scanId
     return (
       <main className="shell">
         <section className="panel status-panel">
-          <p className="eyebrow">{result.scan.status}</p>
+          <p className="eyebrow">{scanStatusLabel(result.scan.status)}</p>
           <h1>Проверяем сайт...</h1>
           <p>Это может занять некоторое время.</p>
           <Link className="secondary-button" href={`/scan/${scanId}`}>
-            Вернуться к статусу
+            Вернуться к ходу проверки
           </Link>
         </section>
       </main>
@@ -138,7 +138,7 @@ export default async function ResultsPage({ params }: { params: Promise<{ scanId
 
               {finding.missingContext.length > 0 ? (
                 <div className="finding-section">
-                  <h3>Недостающий контекст</h3>
+                  <h3>Что нужно уточнить</h3>
                   <p>{finding.missingContext.join(", ")}</p>
                 </div>
               ) : null}
@@ -242,4 +242,20 @@ function userFacingEvidenceValues(evidence: EvidenceViewModel[]): Array<{
   }
 
   return [...values.values()];
+}
+
+function scanStatusLabel(status: string): string {
+  if (status === "QUEUED") {
+    return "В очереди";
+  }
+  if (status === "RUNNING") {
+    return "Идёт проверка";
+  }
+  if (status === "COMPLETED") {
+    return "Проверка завершена";
+  }
+  if (status === "FAILED") {
+    return "Ошибка проверки";
+  }
+  return "Проверка";
 }
