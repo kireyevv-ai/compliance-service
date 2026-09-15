@@ -3,24 +3,21 @@ import {
   claimNextQueuedScan,
   claimQueuedScanById,
   completeScan,
-  createFinding,
   failScan,
   getEvidenceForScan,
   getFactsForScan
 } from "@/db/repository";
 import { detectExternalServices, type ExternalServiceDetectionConfig } from "@/external-services/detection";
-import { assertEvidencePolicy } from "@/findings/builder";
+import { persistProductionFindings } from "@/findings/integration";
 import { deriveRuntimeFacts } from "@/facts/derived";
 import { extractStaticFacts } from "@/facts/extractors/static-html";
 import { persistStaticExtraction } from "@/facts/extractors/persistence";
-import { loadRuntimeRules } from "@/legal-rules/runtime";
-import { evaluateRulesForScan } from "@/rule-engine/evaluator";
 import type { Scan } from "@/db/schema";
 import { runBrowserAudit, type BrowserAuditOptions } from "@/scanner/browser/audit";
 import { crawlSite, type CrawlOptions } from "@/scanner/crawl/crawler";
 import type { CrawlResult } from "@/scanner/crawl/types";
 import { sanitizeScanFailureReason } from "@/scanner/url-safety/url-safety";
-import { evaluateSemanticRulesShadow, type SemanticShadowEvaluation } from "@/semantic-evaluator/shadow";
+import type { SemanticShadowEvaluation } from "@/semantic-evaluator/shadow";
 
 export type StaticExtractionScanResult =
   | {
@@ -163,25 +160,11 @@ export async function runClaimedStaticExtractionScan(
     });
     const facts = await getFactsForScan(db, scan.id);
     const evidence = await getEvidenceForScan(db, scan.id);
-    const evaluations = evaluateRulesForScan({
-      scan,
-      facts,
-      evidence,
-      rules: loadRuntimeRules()
-    });
-    const semanticShadowResults = await evaluateSemanticRulesShadow({
+    const persistedEvaluations = await persistProductionFindings(db, {
       scan,
       facts,
       evidence
     });
-
-    for (const evaluation of evaluations) {
-      if (evaluation.status === "NO_EVALUATION") {
-        continue;
-      }
-      assertEvidencePolicy(evaluation);
-      await createFinding(db, { ...evaluation, scanId: scan.id });
-    }
 
     const completed = await completeScan(db, scan.id);
     return {
@@ -190,7 +173,7 @@ export async function runClaimedStaticExtractionScan(
       ...persisted,
       browserPagesAttempted: Number(browserCoverageValue?.attempted ?? 0),
       browserPagesCompleted: Number(browserCoverageValue?.completed ?? 0),
-      semanticShadowResults
+      semanticShadowResults: []
     };
   } catch (error) {
     const failed = await failScan(db, scan.id, sanitizeScanFailureReason(error));

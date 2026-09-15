@@ -1,5 +1,6 @@
 import type { Evidence } from "@/evidence/types";
 import type { Finding } from "@/findings/types";
+import { OWNER_FINDING_METADATA, SEMANTIC_LEGAL_BASIS } from "@/findings/integration";
 import { loadRuntimeRules } from "@/legal-rules/runtime";
 
 export const EMPTY_RESULT_TITLE = "Проблем не выявлено.";
@@ -95,14 +96,30 @@ export function buildFindingViewModels(
   findings: Finding[],
   evidenceByFindingId: Record<string, Evidence[]>
 ): FindingViewModel[] {
-  const rulePresentationById = new Map(
-    loadRuntimeRules().map((rule) => [
+  const rulePresentationById = new Map<string, { legalBasis: string[]; passSummary?: string }>(
+    [
+      ...loadRuntimeRules().map((rule) => [
       rule.ruleId,
       {
         legalBasis: rule.legalBasis,
         passSummary: rule.passSummary
       }
-    ])
+      ] as const),
+      ...Object.entries(OWNER_FINDING_METADATA).map(([ruleId, metadata]) => [
+        ruleId,
+        {
+          legalBasis: metadata.legalBasis,
+          passSummary: metadata.summary.pass
+        }
+      ] as const),
+      ...Object.entries(SEMANTIC_LEGAL_BASIS).map(([ruleId, legalBasis]) => [
+        ruleId,
+        {
+          legalBasis,
+          passSummary: undefined
+        }
+      ] as const)
+    ]
   );
 
   return sortFindings(findings).map((finding) => {
@@ -153,7 +170,8 @@ function formatFindingEvidence(ruleId: string, evidence: Evidence[]): EvidenceVi
   const unique = new Map<string, EvidenceViewModel>();
 
   for (const item of formatted) {
-    const key = [item.pageUrl, item.detail ?? "", item.links.map((link) => link.url).join("|")].join("::");
+    const description = item.detail ?? item.links.map((link) => link.label).join(" ");
+    const key = [normalizePresentationKey(item.pageUrl), normalizePresentationKey(description)].join("::");
     if (!unique.has(key)) {
       unique.set(key, item);
     }
@@ -169,10 +187,11 @@ function maxEvidenceItems(ruleId: string): number {
 function formatEvidence(ruleId: string, evidence: Evidence): EvidenceViewModel {
   const payload = evidence.payload ?? {};
   const links = evidenceLinks(payload);
-  const detail = userFacingEvidenceDetail(ruleId, payload, links);
+  const sourceUrl = sourceUrlForEvidence(evidence, payload);
+  const detail = userFacingEvidenceDetail(ruleId, payload, sourceUrl);
 
   return {
-    pageUrl: evidence.pageUrl,
+    pageUrl: sourceUrl,
     label: evidenceLabel(ruleId, evidence.evidenceType, payload),
     detail: detail ? compact(detail, 160) : undefined,
     links
@@ -182,7 +201,7 @@ function formatEvidence(ruleId: string, evidence: Evidence): EvidenceViewModel {
 function userFacingEvidenceDetail(
   ruleId: string,
   payload: Record<string, unknown>,
-  links: EvidenceLinkViewModel[]
+  sourceUrl: string
 ): string | undefined {
   if (isInternalOnlyPayload(payload)) {
     return undefined;
@@ -214,15 +233,17 @@ function userFacingEvidenceDetail(
     return `${formatAmount(amount)} ${currencyMarker}`;
   }
 
-  const text = shortText(textValue(payload.text) ?? textValue(payload.title) ?? textValue(payload.ariaLabel));
-  const cleanContext = shortText(context && !isInternalContext(context) ? context : undefined);
-  const linkLabel = links[0]?.label;
+  const text = shortText(
+    cleanEvidenceText(textValue(payload.text) ?? textValue(payload.title) ?? textValue(payload.ariaLabel), sourceUrl)
+  );
+  const cleanContext = shortText(context && !isInternalContext(context) ? cleanEvidenceText(context, sourceUrl) : undefined);
+  const detailParts = uniqueTextParts([text, cleanContext]);
 
   if (isPolicyOrOfferRule(ruleId)) {
-    return compact([text, linkLabel].filter(Boolean).join(" · "), 160) || linkLabel || cleanContext;
+    return compact(detailParts.join(" · "), 160) || cleanContext;
   }
 
-  return compact([text, cleanContext, linkLabel].filter(Boolean).join(" · "), 420) || undefined;
+  return compact(detailParts.join(" · "), 420) || undefined;
 }
 
 function evidenceLabel(ruleId: string, evidenceType: string, payload: Record<string, unknown>): string {
@@ -239,6 +260,10 @@ function evidenceLabel(ruleId: string, evidenceType: string, payload: Record<str
   }
 
   if (evidenceType === "TEXT") {
+    return "Текст на странице";
+  }
+
+  if (evidenceType === "TEXT_FRAGMENT") {
     return "Текст на странице";
   }
 
@@ -261,6 +286,14 @@ function evidenceLinks(payload: Record<string, unknown>): EvidenceLinkViewModel[
     url,
     label: url
   }));
+}
+
+function sourceUrlForEvidence(evidence: Evidence, payload: Record<string, unknown>): string {
+  const sourceUrl = textValue(payload.sourceUrl);
+  if (sourceUrl && isHttpUrl(sourceUrl)) {
+    return sourceUrl;
+  }
+  return evidence.pageUrl;
 }
 
 function sourceUrls(value: unknown): string[] {
@@ -334,6 +367,37 @@ function shortText(value: string | undefined): string | undefined {
 
   const compacted = compact(value, 160);
   return compacted.length > 2 ? compacted : undefined;
+}
+
+function cleanEvidenceText(value: string | undefined, sourceUrl?: string): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const withoutInternalLabel = value.replace(
+    /^(ТЕКСТ_СОГЛАСИЯ|ЦЕЛИ_ОБРАБОТКИ|КАТЕГОРИИ_ДАННЫХ|СРОКИ_ХРАНЕНИЯ|ПОРЯДОК_ОБРАЩЕНИЙ)\s*:\s*/u,
+    ""
+  );
+  if (!sourceUrl || !isHttpUrl(sourceUrl)) {
+    return withoutInternalLabel;
+  }
+  return withoutInternalLabel.replaceAll(sourceUrl, "").replace(/\s+([.,;:])/g, "$1");
+}
+
+function uniqueTextParts(values: Array<string | undefined>): string[] {
+  const unique = new Map<string, string>();
+
+  for (const value of values) {
+    const key = normalizePresentationKey(value ?? "");
+    if (key && !unique.has(key)) {
+      unique.set(key, value!.trim());
+    }
+  }
+
+  return [...unique.values()];
+}
+
+function normalizePresentationKey(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
 }
 
 function isHttpUrl(value: string): boolean {

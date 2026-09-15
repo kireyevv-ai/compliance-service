@@ -210,13 +210,119 @@ describe("results presentation", () => {
     });
 
     expect(view.evidence[0].pageUrl).toBe("https://shop.example.ru/");
-    expect(view.evidence[0].detail).toBe("Публичная оферта · https://shop.example.ru/offer");
+    expect(view.evidence[0].detail).toBe("Публичная оферта");
     expect(view.evidence[0].links).toEqual([
       { url: "https://shop.example.ru/offer", label: "https://shop.example.ru/offer" }
     ]);
+    expect(view.evidence[0].detail).not.toContain("https://shop.example.ru/offer");
     expect(view.evidence[0].detail).not.toContain("offer_link_found");
     expect(view.evidence[0].detail).not.toContain("selector");
     expect(view.evidence[0].detail).not.toContain("<a");
+  });
+
+  it("deduplicates identical static and rendered evidence presentation entries", () => {
+    const sourceFinding = finding("FAIL", "PD-013");
+    const [view] = buildFindingViewModels([sourceFinding], {
+      [sourceFinding.id]: [
+        evidence({
+          id: "static-evidence",
+          evidenceType: "TEXT_FRAGMENT",
+          pageUrl: "https://example.ru/policy",
+          payload: {
+            text: "Политика не содержит понятного описания целей обработки.",
+            context: "Политика не содержит понятного описания целей обработки."
+          }
+        }),
+        evidence({
+          id: "rendered-evidence",
+          evidenceType: "DOM_FRAGMENT",
+          pageUrl: "https://example.ru/policy",
+          payload: {
+            text: "  Политика не содержит понятного описания целей обработки.  ",
+            context: "Политика не содержит понятного описания целей обработки."
+          }
+        })
+      ]
+    });
+
+    expect(view.evidence).toHaveLength(1);
+    expect(view.evidence[0].detail).toBe("Политика не содержит понятного описания целей обработки.");
+  });
+
+  it("deduplicates same evidence description on the same source URL", () => {
+    const sourceFinding = finding("FAIL", "PD-014");
+    const [view] = buildFindingViewModels([sourceFinding], {
+      [sourceFinding.id]: [
+        evidence({
+          id: "first-evidence",
+          pageUrl: "https://example.ru/policy",
+          payload: { text: "Не перечислены категории персональных данных." }
+        }),
+        evidence({
+          id: "second-evidence",
+          evidenceType: "TEXT_FRAGMENT",
+          pageUrl: "https://example.ru/policy",
+          payload: { text: "Не перечислены   категории персональных данных." }
+        })
+      ]
+    });
+
+    expect(view.evidence).toHaveLength(1);
+    expect(view.evidence[0].detail).toBe("Не перечислены категории персональных данных.");
+  });
+
+  it("keeps different evidence descriptions on the same source URL", () => {
+    const sourceFinding = finding("FAIL", "PD-015");
+    const [view] = buildFindingViewModels([sourceFinding], {
+      [sourceFinding.id]: [
+        evidence({
+          id: "retention-evidence",
+          pageUrl: "https://example.ru/policy",
+          payload: { text: "Не описаны сроки хранения данных." }
+        }),
+        evidence({
+          id: "deletion-evidence",
+          pageUrl: "https://example.ru/policy",
+          payload: { text: "Не описан порядок удаления данных." }
+        })
+      ]
+    });
+
+    expect(view.evidence).toHaveLength(2);
+    expect(view.evidence.map((item) => item.detail)).toEqual([
+      "Не описаны сроки хранения данных.",
+      "Не описан порядок удаления данных."
+    ]);
+  });
+
+  it("deduplicates repeated PASS evidence before the collapsed passed section renders it", () => {
+    const sourceFinding = finding("PASS", "EC-001");
+    const [view] = buildFindingViewModels([sourceFinding], {
+      [sourceFinding.id]: [
+        evidence({
+          id: "offer-link-static",
+          evidenceType: "DOCUMENT_REFERENCE",
+          pageUrl: "https://shop.example.ru/",
+          payload: {
+            url: "https://shop.example.ru/offer",
+            text: "Публичная оферта"
+          }
+        }),
+        evidence({
+          id: "offer-link-rendered",
+          evidenceType: "DOM_FRAGMENT",
+          pageUrl: "https://shop.example.ru/",
+          payload: {
+            url: "https://shop.example.ru/offer",
+            text: "Публичная оферта"
+          }
+        })
+      ]
+    });
+
+    expect(view.status).toBe("PASS");
+    expect(view.evidence).toHaveLength(1);
+    expect(view.evidence[0].detail).toBe("Публичная оферта");
   });
 
   it("formats seller, price, and policy-access evidence from existing evidence only", () => {

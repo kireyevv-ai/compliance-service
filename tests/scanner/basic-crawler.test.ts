@@ -22,12 +22,14 @@ import { runStaticExtractionScanLifecycle } from "@/jobs/scan-queue";
 
 function createTestDb(): Queryable {
   const db = newDb();
-  const schema = readFileSync(
-    path.join(process.cwd(), "src", "db", "migrations", "001_initial_schema.sql"),
-    "utf8"
-  );
-
-  db.public.none(schema);
+  for (const file of [
+    "001_initial_schema.sql",
+    "002_owner_answers.sql",
+    "003_owner_answer_context_key.sql",
+    "004_findings_unique_rule_result.sql"
+  ]) {
+    db.public.none(readFileSync(path.join(process.cwd(), "src", "db", "migrations", file), "utf8"));
+  }
 
   const adapter = db.adapters.createPg();
   return new adapter.Pool();

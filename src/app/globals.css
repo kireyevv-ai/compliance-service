@@ -260,6 +260,17 @@ p {
   margin-bottom: 24px;
 }
 
+.finding-group {
+  display: grid;
+  gap: 14px;
+}
+
+.finding-group > h2 {
+  margin: 0;
+  color: #1f2926;
+  font-size: 1.2rem;
+}
+
 .finding-card {
   padding: 22px;
 }
@@ -325,21 +336,32 @@ p {
 .pass-details summary {
   cursor: pointer;
   font-weight: 700;
+  list-style-position: outside;
+  outline-offset: 4px;
 }
 
-.pass-details ul {
-  margin: 12px 0 0;
-  padding-left: 20px;
-  color: #4d5753;
-  line-height: 1.55;
+.pass-details summary:focus-visible {
+  border-radius: 4px;
+  outline: 2px solid #82938b;
 }
 
-.pass-list > li {
-  margin-bottom: 10px;
+.pass-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
 }
 
-.pass-list details summary {
+.pass-item {
+  border: 1px solid #d9ddd5;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 14px 16px;
+}
+
+.pass-item h3 {
+  margin: 0;
   color: #1d2522;
+  font-size: 1rem;
 }
 
 .pass-evidence {
@@ -348,13 +370,19 @@ p {
   border-left: 3px solid #d9ddd5;
 }
 
-.pass-evidence h3 {
+.pass-evidence h4 {
   margin: 10px 0 4px;
   font-size: 0.95rem;
 }
 
-.pass-evidence h3:first-child {
+.pass-evidence h4:first-child {
   margin-top: 0;
+}
+
+.pass-evidence p {
+  max-width: none;
+  margin-bottom: 6px;
+  color: #4d5753;
 }
 
 .pass-evidence a {

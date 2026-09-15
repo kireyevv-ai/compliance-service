@@ -30,7 +30,12 @@ import type { SiteType } from "@/db/schema";
 
 function createTestDb(): Queryable {
   const db = newDb();
-  for (const file of ["001_initial_schema.sql", "002_owner_answers.sql", "003_owner_answer_context_key.sql"]) {
+  for (const file of [
+    "001_initial_schema.sql",
+    "002_owner_answers.sql",
+    "003_owner_answer_context_key.sql",
+    "004_findings_unique_rule_result.sql"
+  ]) {
     db.public.none(readFileSync(path.join(process.cwd(), "src", "db", "migrations", file), "utf8"));
   }
   const adapter = db.adapters.createPg();

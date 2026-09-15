@@ -6,6 +6,7 @@ import {
   getScanById,
   upsertOwnerAnswer
 } from "@/db/repository";
+import { persistOwnerFindingsForScan } from "@/findings/integration";
 import {
   evaluateOwnerRules,
   getOwnerQuestionApplicability
@@ -136,6 +137,7 @@ export async function saveOwnerAnswerForScan(
       contextKey,
       answer: parsed.data.answer
     });
+    await persistOwnerFindingsForScan(db, scan);
   } catch {
     return { ok: false as const, status: 400, error: "Проверьте вариант ответа" };
   }

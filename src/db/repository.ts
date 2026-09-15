@@ -469,6 +469,91 @@ export async function createFinding(
   return mapFinding(result.rows[0]);
 }
 
+export async function upsertFinding(
+  db: Queryable,
+  input: RuleEvaluation & { scanId: string }
+): Promise<Finding> {
+  const result = await db.query<FindingRow>(
+    `
+      insert into findings (
+        id,
+        scan_id,
+        rule_id,
+        rule_version,
+        status,
+        severity,
+        confidence,
+        summary,
+        explanation,
+        remediation,
+        missing_context,
+        created_at
+      )
+      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now())
+      on conflict (scan_id, rule_id, rule_version) do update
+        set status = excluded.status,
+            severity = excluded.severity,
+            confidence = excluded.confidence,
+            summary = excluded.summary,
+            explanation = excluded.explanation,
+            remediation = excluded.remediation,
+            missing_context = excluded.missing_context
+      returning *
+    `,
+    [
+      randomUUID(),
+      input.scanId,
+      input.ruleId,
+      input.ruleVersion,
+      input.status,
+      input.severity,
+      input.confidence,
+      input.summary,
+      input.explanation,
+      input.remediation,
+      input.missingContext
+    ]
+  );
+
+  const finding = mapFinding(result.rows[0]);
+  await db.query("delete from finding_evidence where finding_id = $1", [finding.id]);
+  for (const evidenceId of input.evidenceIds) {
+    await linkFindingEvidence(db, { findingId: finding.id, evidenceId });
+  }
+
+  return finding;
+}
+
+export async function deleteFindingForRule(
+  db: Queryable,
+  input: { scanId: string; ruleId: string; ruleVersion: string }
+): Promise<void> {
+  const existing = await db.query<{ id: string }>(
+    `
+      select id
+      from findings
+      where scan_id = $1
+        and rule_id = $2
+        and rule_version = $3
+    `,
+    [input.scanId, input.ruleId, input.ruleVersion]
+  );
+
+  for (const row of existing.rows) {
+    await db.query("delete from finding_evidence where finding_id = $1", [row.id]);
+  }
+
+  await db.query(
+    `
+      delete from findings
+      where scan_id = $1
+        and rule_id = $2
+        and rule_version = $3
+    `,
+    [input.scanId, input.ruleId, input.ruleVersion]
+  );
+}
+
 export async function upsertOwnerAnswer(
   db: Queryable,
   input: { scanId: string; questionId: string; answer: OwnerAnswerValue; contextKey?: string }
