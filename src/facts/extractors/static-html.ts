@@ -119,7 +119,7 @@ export function extractStaticFacts(
       });
     }
 
-    extractFormFacts($, page.url, facts, pageSignals);
+    extractFormFacts($, page, facts, pageSignals);
     extractSellerFacts($, page.url, sellerCandidates);
     extractPriceFacts($, page.url, facts, pageSignals);
 
@@ -165,10 +165,12 @@ export function extractStaticFacts(
 
 function extractFormFacts(
   $: cheerio.CheerioAPI,
-  pageUrl: string,
+  page: CrawledPage,
   facts: ExtractedFact[],
   pageSignals: PageSignals
 ): void {
+  const pageUrl = page.url;
+  const completeness = semanticCompletenessForPage(page);
   $("form").each((index, formElement) => {
     const form = $(formElement);
     const actionRaw = form.attr("action")?.trim();
@@ -202,7 +204,7 @@ function extractFormFacts(
       };
     });
 
-    const formEvidence = domEvidence(pageUrl, { selector: `form:eq(${index})`, fragment: formHtml });
+    const formEvidence = domEvidence(pageUrl, { selector: `form:eq(${index})`, fragment: formHtml, ...completeness });
     facts.push({
       pageUrl,
       factType: "form_found",
@@ -280,7 +282,8 @@ function extractFormFacts(
       const controlEvidence = domEvidence(pageUrl, {
         selector: `form:eq(${index}) input[type='${control.attr("type") ?? "checkbox"}']:eq(${controlIndex})`,
         fragment: compactText($.html(controlElement), 500),
-        context: nearbyText
+        context: nearbyText,
+        ...completeness
       });
       facts.push({
         pageUrl,
@@ -699,6 +702,30 @@ function domEvidence(pageUrl: string, payload: Record<string, unknown>): Extract
 
 function textEvidence(pageUrl: string, payload: Record<string, unknown>): ExtractedEvidence {
   return { evidenceType: "TEXT_FRAGMENT", pageUrl, payload };
+}
+
+function semanticCompletenessForPage(page: CrawledPage): Record<string, unknown> {
+  return {
+    semanticCompleteness:
+      page.status >= 200 &&
+      page.status < 300 &&
+      /(?:^|;|\s)text\/html\b/i.test(page.contentType) &&
+      page.contentLimited !== true
+        ? "COMPLETE"
+        : "PARTIAL",
+    documentType: /(?:^|;|\s)text\/html\b/i.test(page.contentType) ? "HTML" : "OTHER",
+    fetchStatus: page.status,
+    fetchContentType: page.contentType,
+    contentLimited: page.contentLimited === true,
+    limitationReason: page.limitationReason,
+    interstitialDetected: false,
+    extractionSucceeded: true,
+    extractionRoot: "body",
+    extractionRootFallback: true,
+    truncated: false,
+    originalTextLength: page.html.length,
+    maxChars: page.html.length
+  };
 }
 
 function classifyPersonalData(descriptor: string): string[] {

@@ -1,12 +1,29 @@
 import { loadPilotSemanticRuntimeRules } from "@/legal-rules/runtime";
 import type { SemanticEvaluationInput, SemanticEvaluationStatus, SemanticEvidenceCompleteness, SemanticObservation } from "./types";
 
-export type PilotBenchmarkRuleId = "PD-005" | "PD-008" | "PD-009" | "PD-010" | "PD-013" | "PD-014" | "PD-015" | "PD-016";
+export type PilotBenchmarkRuleId =
+  | "PD-005"
+  | "PD-008"
+  | "PD-009"
+  | "PD-010"
+  | "PD-013"
+  | "PD-014"
+  | "PD-015"
+  | "PD-016"
+  | "PD-017"
+  | "PD-018"
+  | "PD-019";
 export type BenchmarkExpectedVerdict = SemanticEvaluationStatus;
 export type BenchmarkExpectedObservation = SemanticObservation;
 
 export interface BenchmarkEvidence {
-  factType: "consent_text" | "privacy_policy_text" | "marketing_consent_control_found" | "rendered_marketing_consent_found";
+  factType:
+    | "consent_text"
+    | "privacy_policy_text"
+    | "marketing_consent_control_found"
+    | "rendered_marketing_consent_found"
+    | "form_fields"
+    | "external_service_matches";
   excerpt: string;
   completeness: SemanticEvidenceCompleteness;
   truncated?: boolean;
@@ -101,7 +118,34 @@ export const PILOT_BENCHMARK_CASES: PilotBenchmarkCase[] = [
   c("PD-016-F02", "PD-016", "FAIL", "ABSENT", "Complete synthetic policy describes purposes and categories only.", policy("Цели обработки - доставка заказа и клиентская поддержка. Категории данных: имя, телефон, адрес доставки.", false, "COMPLETE")),
   c("PD-016-F03", "PD-016", "FAIL", "ABSENT", "Complete synthetic policy has operator duties but no request route.", policy("Оператор принимает меры для защиты данных и назначает ответственных лиц за организацию обработки.", false, "COMPLETE")),
   c("PD-016-M01", "PD-016", "MANUAL_CHECK", "ABSENT", "Procedure may be in truncated section.", policy("Порядок направления запросов субъектов персональных данных приведен далее.", true, "TRUNCATED")),
-  c("PD-016-M02", "PD-016", "MANUAL_CHECK", "ABSENT", "Reference to external procedure is insufficient.", policy("Права пользователя реализуются в порядке, опубликованном в отдельном документе."))]
+  c("PD-016-M02", "PD-016", "MANUAL_CHECK", "ABSENT", "Reference to external procedure is insufficient.", policy("Права пользователя реализуются в порядке, опубликованном в отдельном документе.")),
+
+  cMany("PD-017-P01", "PD-017", "PASS", "PRESENT", "Form name and email are reflected in policy.", [form("Форма заявки собирает персональные данные: имя, электронная почта."), policy("Политика указывает категории данных: имя и адрес электронной почты.", false, "COMPLETE")]),
+  cMany("PD-017-P02", "PD-017", "PASS", "PRESENT", "Equivalent wording for phone and email is sufficient.", [form("Форма обратной связи собирает телефон и e-mail."), policy("Оператор обрабатывает контактные данные: номер телефона и электронную почту.", false, "COMPLETE")]),
+  cMany("PD-017-P03", "PD-017", "PASS", "PRESENT", "Technical hidden field is not included as personal data.", [form("Форма заказа собирает имя и телефон. Техническое hidden поле csrf не относится к персональным данным."), policy("В политике указаны имя и телефон.", false, "COMPLETE")]),
+  cMany("PD-017-F01", "PD-017", "FAIL", "ABSENT", "Date of birth collected by form is missing from complete policy.", [form("Форма регистрации собирает имя, телефон и дату рождения."), policy("Политика указывает категории данных: имя и телефон.", false, "COMPLETE")]),
+  cMany("PD-017-F02", "PD-017", "FAIL", "ABSENT", "Address collected by form is missing from complete policy.", [form("Форма доставки собирает имя, телефон и адрес доставки."), policy("Политика описывает имя и номер телефона.", false, "COMPLETE")]),
+  cMany("PD-017-F03", "PD-017", "FAIL", "ABSENT", "Email collected by form is missing from complete policy.", [form("Форма заявки собирает имя и электронную почту."), policy("Политика описывает только имя пользователя.", false, "COMPLETE")]),
+  cMany("PD-017-M01", "PD-017", "MANUAL_CHECK", "ABSENT", "Incomplete policy cannot prove omission.", [form("Форма собирает имя, телефон и дату рождения."), policy("Категории данных перечислены далее.", true, "TRUNCATED")]),
+  cMany("PD-017-M02", "PD-017", "MANUAL_CHECK", "AMBIGUOUS", "Policy wording is too generic.", [form("Форма собирает имя и телефон."), policy("Оператор обрабатывает сведения, предоставленные пользователем.")]),
+
+  cMany("PD-018-P01", "PD-018", "PASS", "PRESENT", "Relevant service disclosed by name.", [service("Найден внешний сервис: Yandex Metrica, категория analytics."), policy("Политика указывает, что сайт использует Яндекс Метрику для аналитики.", false, "COMPLETE")]),
+  cMany("PD-018-P02", "PD-018", "PASS", "PRESENT", "Relevant service disclosed by category.", [service("Найден внешний сервис: MailerLite, категория email_marketing."), policy("Политика раскрывает передачу данных сервисам рассылки и email-маркетинга.", false, "COMPLETE")]),
+  cMany("PD-018-P03", "PD-018", "PASS", "PRESENT", "Payment provider category is enough.", [service("Найден внешний сервис: CloudPayments, категория payment."), policy("Для оплаты заказов данные могут передаваться платежному оператору.", false, "COMPLETE")]),
+  cMany("PD-018-F01", "PD-018", "FAIL", "ABSENT", "Relevant analytics service is not disclosed.", [service("Найден внешний сервис: Yandex Metrica, категория analytics."), policy("Политика описывает только внутреннюю обработку заявок и не упоминает аналитику или внешних обработчиков.", false, "COMPLETE")]),
+  cMany("PD-018-F02", "PD-018", "FAIL", "ABSENT", "Relevant mailing service is not disclosed.", [service("Найден внешний сервис: Unisender, категория email_marketing."), policy("Политика описывает обработку данных оператором без получателей и сервисов рассылки.", false, "COMPLETE")]),
+  cMany("PD-018-F03", "PD-018", "FAIL", "ABSENT", "Relevant CRM service is not disclosed.", [service("Найден внешний сервис: Bitrix24, категория CRM."), policy("Политика перечисляет цели и категории данных, но не раскрывает CRM или иных обработчиков.", false, "COMPLETE")]),
+  cMany("PD-018-M01", "PD-018", "MANUAL_CHECK", "ABSENT", "Incomplete policy cannot prove service omission.", [service("Найден внешний сервис: Yandex Metrica, категория analytics."), policy("Раздел о третьих лицах приведен далее.", true, "TRUNCATED")]),
+  cMany("PD-018-M02", "PD-018", "MANUAL_CHECK", "AMBIGUOUS", "Service relevance or policy category is ambiguous.", [service("Найден внешний технический сервис: static CDN, категория technical_asset.", "UNKNOWN"), policy("Политика допускает использование технических сервисов для работы сайта.")]),
+
+  cMany("PD-019-P01", "PD-019", "PASS", "PRESENT", "No-transfer claim is consistent with no contradictory relevant processor.", [service("Найден только технический CDN без признака обработки персональных данных.", "COMPLETE"), policy("Персональные данные третьим лицам не передаются.", false, "COMPLETE")]),
+  cMany("PD-019-P02", "PD-019", "PASS", "PRESENT", "No-transfer claim is consistent with internal-only service evidence.", [service("Внешние обработчики персональных данных не подтверждены.", "COMPLETE"), policy("Оператор не предоставляет персональные данные третьим лицам.", false, "COMPLETE")]),
+  cMany("PD-019-P03", "PD-019", "PASS", "PRESENT", "Foreign technical asset alone is not contradiction.", [service("Найден иностранный CDN как технический asset без подтвержденной обработки персональных данных.", "COMPLETE"), policy("Персональные данные третьим сторонам не раскрываются.", false, "COMPLETE")]),
+  cMany("PD-019-F01", "PD-019", "FAIL", "ABSENT", "No-transfer claim contradicts confirmed analytics processor.", [service("Найден подтвержденный внешний обработчик: Yandex Metrica, категория analytics."), policy("Персональные данные третьим лицам не передаются.", false, "COMPLETE")]),
+  cMany("PD-019-F02", "PD-019", "FAIL", "ABSENT", "No-transfer claim contradicts confirmed mailing processor.", [service("Найден подтвержденный внешний обработчик: Unisender, категория email_marketing."), policy("Оператор не предоставляет персональные данные третьим лицам.", false, "COMPLETE")]),
+  cMany("PD-019-F03", "PD-019", "FAIL", "ABSENT", "No-transfer claim contradicts confirmed CRM processor.", [service("Найден подтвержденный внешний обработчик: Bitrix24, категория CRM."), policy("Персональные данные третьим сторонам не раскрываются.", false, "COMPLETE")]),
+  cMany("PD-019-M01", "PD-019", "MANUAL_CHECK", "AMBIGUOUS", "Relevance is ambiguous.", [service("Найден внешний сервис, но связь с обработкой персональных данных не подтверждена.", "UNKNOWN"), policy("Персональные данные третьим лицам не передаются.", false, "COMPLETE")]),
+  cMany("PD-019-M02", "PD-019", "MANUAL_CHECK", "ABSENT", "Incomplete service evidence cannot prove contradiction.", [service("Возможно используется внешний обработчик аналитики.", "PARTIAL"), policy("Персональные данные третьим лицам не передаются.", false, "COMPLETE")])]
 
 export function buildBenchmarkInput(testCase: PilotBenchmarkCase): SemanticEvaluationInput {
   const rule = ruleCriteria.get(testCase.ruleId);
@@ -143,12 +187,31 @@ function c(
   return { caseId, ruleId, expected, expectedObservation, manualRationale, evidence: [evidence] };
 }
 
+function cMany(
+  caseId: string,
+  ruleId: PilotBenchmarkRuleId,
+  expected: BenchmarkExpectedVerdict,
+  expectedObservation: BenchmarkExpectedObservation,
+  manualRationale: string,
+  evidence: BenchmarkEvidence[]
+): PilotBenchmarkCase {
+  return { caseId, ruleId, expected, expectedObservation, manualRationale, evidence };
+}
+
 function consent(excerpt: string, completeness: SemanticEvidenceCompleteness = "UNKNOWN"): BenchmarkEvidence {
   return { factType: "consent_text", excerpt, completeness };
 }
 
 function marketing(excerpt: string, completeness: SemanticEvidenceCompleteness = "UNKNOWN"): BenchmarkEvidence {
   return { factType: "marketing_consent_control_found", excerpt, completeness };
+}
+
+function form(excerpt: string, completeness: SemanticEvidenceCompleteness = "COMPLETE"): BenchmarkEvidence {
+  return { factType: "form_fields", excerpt, completeness };
+}
+
+function service(excerpt: string, completeness: SemanticEvidenceCompleteness = "COMPLETE"): BenchmarkEvidence {
+  return { factType: "external_service_matches", excerpt, completeness };
 }
 
 function policy(

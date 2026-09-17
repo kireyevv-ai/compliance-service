@@ -5,6 +5,10 @@ export type SemanticEvidenceCompletenessMetadata = Record<string, unknown>;
 export function classifySemanticEvidenceCompleteness(
   metadata: SemanticEvidenceCompletenessMetadata
 ): SemanticEvidenceCompleteness {
+  if (isExplicitCompleteness(metadata.semanticCompleteness)) {
+    return metadata.semanticCompleteness;
+  }
+
   const truncated = metadata.truncated === true;
   const originalTextLength = asNumber(metadata.originalTextLength);
   const maxChars = asNumber(metadata.maxChars);
@@ -35,6 +39,10 @@ export function classifySemanticEvidenceCompleteness(
   }
 
   return "UNKNOWN";
+}
+
+function isExplicitCompleteness(value: unknown): value is SemanticEvidenceCompleteness {
+  return value === "COMPLETE" || value === "PARTIAL" || value === "TRUNCATED" || value === "UNKNOWN";
 }
 
 function isKnownPartial(metadata: SemanticEvidenceCompletenessMetadata): boolean {

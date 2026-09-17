@@ -105,7 +105,10 @@ function ruleSpecificSemanticProvider() {
     "PD-013": "ЦЕЛИ_ОБРАБОТКИ",
     "PD-014": "КАТЕГОРИИ_ДАННЫХ",
     "PD-015": "СРОКИ_ХРАНЕНИЯ",
-    "PD-016": "ПОРЯДОК_ОБРАЩЕНИЙ"
+    "PD-016": "ПОРЯДОК_ОБРАЩЕНИЙ",
+    "PD-017": "Категории формы",
+    "PD-018": "Внешний сервис",
+    "PD-019": "Не передаём третьим лицам"
   };
   return new FakeSemanticModelProvider((request: SemanticModelRequest) => {
     const marker = markers[request.ruleId];
@@ -359,6 +362,42 @@ describe("final production finding integration", () => {
     expect((await getFindingsForScan(db, scan.id)).some((finding) => finding.ruleId === "PD-013")).toBe(false);
   });
 
+  it("does not persist PD-019 when policy has no explicit no-transfer claim", async () => {
+    const db = createTestDb();
+    const scan = await createScan(db);
+    await factWithEvidence(db, scan.id, "external_service_matches", {
+      service_name: "Yandex Metrica",
+      category: "analytics",
+      signal_type: "SCRIPT",
+      matched_host: "mc.yandex.ru",
+      provider_scope: "RU_PROVIDER",
+      semanticCompleteness: "COMPLETE"
+    }, "Найден внешний сервис аналитики.");
+    await factWithEvidence(db, scan.id, "privacy_policy_text", {
+      text: "Политика описывает цели и категории обработки данных.",
+      documentType: "HTML",
+      fetchStatus: 200,
+      fetchContentType: "text/html",
+      contentLimited: false,
+      interstitialDetected: false,
+      extractionSucceeded: true,
+      extractionRoot: "main",
+      extractionRootFallback: false,
+      truncated: false,
+      originalTextLength: 51,
+      maxChars: 50_000
+    }, "Политика описывает цели и категории обработки данных.");
+
+    await persistProductionFindings(db, {
+      scan,
+      facts: await importFacts(db, scan.id),
+      evidence: await importEvidence(db, scan.id),
+      semanticProvider: semanticProvider("PRESENT")
+    });
+
+    expect((await getFindingsForScan(db, scan.id)).some((finding) => finding.ruleId === "PD-019")).toBe(false);
+  });
+
   it("does not persist owner finding for unresolved applicability", async () => {
     const db = createTestDb();
     const scan = await createScan(db, "ECOMMERCE");
@@ -460,6 +499,36 @@ describe("final production finding integration", () => {
     await factWithEvidence(
       db,
       scan.id,
+      "form_fields",
+      {
+        formIndex: 0,
+        semanticCompleteness: "COMPLETE",
+        fields: [
+          { label: "Категории формы: имя", personalDataCategories: ["name"] },
+          { label: "Категории формы: телефон", personalDataCategories: ["phone"] }
+        ]
+      },
+      "Категории формы: форма собирает имя и телефон.",
+      "https://example.test/lead"
+    );
+    await factWithEvidence(
+      db,
+      scan.id,
+      "external_service_matches",
+      {
+        service_name: "Внешний сервис аналитики",
+        category: "analytics",
+        signal_type: "SCRIPT",
+        matched_host: "analytics.example.test",
+        provider_scope: "RU_PROVIDER",
+        semanticCompleteness: "COMPLETE"
+      },
+      "Внешний сервис; Не передаём третьим лицам: найден сервис аналитики.",
+      "https://example.test/"
+    );
+    await factWithEvidence(
+      db,
+      scan.id,
       "privacy_policy_text",
       {
         text: "ЦЕЛИ_ОБРАБОТКИ: в документе нет целей обработки.",
@@ -541,6 +610,69 @@ describe("final production finding integration", () => {
       "ПОРЯДОК_ОБРАЩЕНИЙ: в документе нет порядка обращений.",
       "https://example.test/privacy#requests"
     );
+    await factWithEvidence(
+      db,
+      scan.id,
+      "privacy_policy_text",
+      {
+        text: "Категории формы: в политике нет телефона.",
+        documentType: "HTML",
+        fetchStatus: 200,
+        fetchContentType: "text/html",
+        contentLimited: false,
+        interstitialDetected: false,
+        extractionSucceeded: true,
+        extractionRoot: "main",
+        extractionRootFallback: false,
+        truncated: false,
+        originalTextLength: 39,
+        maxChars: 50_000
+      },
+      "Категории формы: в политике нет телефона.",
+      "https://example.test/privacy#form-categories"
+    );
+    await factWithEvidence(
+      db,
+      scan.id,
+      "privacy_policy_text",
+      {
+        text: "Внешний сервис: в политике нет аналитики.",
+        documentType: "HTML",
+        fetchStatus: 200,
+        fetchContentType: "text/html",
+        contentLimited: false,
+        interstitialDetected: false,
+        extractionSucceeded: true,
+        extractionRoot: "main",
+        extractionRootFallback: false,
+        truncated: false,
+        originalTextLength: 41,
+        maxChars: 50_000
+      },
+      "Внешний сервис: в политике нет аналитики.",
+      "https://example.test/privacy#services"
+    );
+    await factWithEvidence(
+      db,
+      scan.id,
+      "privacy_policy_text",
+      {
+        text: "Не передаём третьим лицам: персональные данные третьим лицам не передаются.",
+        documentType: "HTML",
+        fetchStatus: 200,
+        fetchContentType: "text/html",
+        contentLimited: false,
+        interstitialDetected: false,
+        extractionSucceeded: true,
+        extractionRoot: "main",
+        extractionRootFallback: false,
+        truncated: false,
+        originalTextLength: 76,
+        maxChars: 50_000
+      },
+      "Не передаём третьим лицам: персональные данные третьим лицам не передаются.",
+      "https://example.test/privacy#no-transfer"
+    );
 
     await persistProductionFindings(db, {
       scan,
@@ -563,6 +695,9 @@ describe("final production finding integration", () => {
     const pd014 = views.find((finding) => finding.ruleId === "PD-014")!;
     const pd015 = views.find((finding) => finding.ruleId === "PD-015")!;
     const pd016 = views.find((finding) => finding.ruleId === "PD-016")!;
+    const pd017 = views.find((finding) => finding.ruleId === "PD-017")!;
+    const pd018 = views.find((finding) => finding.ruleId === "PD-018")!;
+    const pd019 = views.find((finding) => finding.ruleId === "PD-019")!;
 
     expect(pd005.evidence[0]).toMatchObject({
       pageUrl: "https://example.test/consent#separate",
@@ -596,8 +731,17 @@ describe("final production finding integration", () => {
       pageUrl: "https://example.test/privacy#requests",
       detail: expect.stringContaining("в документе нет порядка обращений")
     });
+    expect(pd017.evidence.map((item) => item.pageUrl)).toEqual(
+      expect.arrayContaining(["https://example.test/lead", "https://example.test/privacy#form-categories"])
+    );
+    expect(pd018.evidence.map((item) => item.pageUrl)).toEqual(
+      expect.arrayContaining(["https://example.test/", "https://example.test/privacy#services"])
+    );
+    expect(pd019.evidence.map((item) => item.pageUrl)).toEqual(
+      expect.arrayContaining(["https://example.test/", "https://example.test/privacy#no-transfer"])
+    );
 
-    const pilotViews = [pd005, pd008, pd009, pd010, pd013, pd014, pd015, pd016];
+    const pilotViews = [pd005, pd008, pd009, pd010, pd013, pd014, pd015, pd016, pd017, pd018, pd019];
     const rendered = JSON.stringify(pilotViews.map((finding) => finding.evidence));
     expect(rendered).not.toContain("ТЕКСТ_СОГЛАСИЯ");
     expect(rendered).not.toContain("ЦЕЛИ_ОБРАБОТКИ");

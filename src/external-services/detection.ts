@@ -283,7 +283,13 @@ function matchEvidence(match: ServiceMatch, observation: Observation): Extracted
       sanitized_url: observation.sanitizedUrl,
       matched_path: observation.path,
       service_id: match.service_id,
-      matched_pattern: match.matched_pattern
+      service_name: match.service_name,
+      category: match.category,
+      provider_scope: match.provider_scope,
+      confidence: match.confidence,
+      matched_pattern: match.matched_pattern,
+      context: `External service detected: ${match.service_name} (${match.category}) via ${match.signal_type} on ${match.matched_host}. Provider scope: ${match.provider_scope}.`,
+      semanticCompleteness: "COMPLETE"
     }
   };
 }

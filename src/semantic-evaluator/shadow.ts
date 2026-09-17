@@ -74,6 +74,11 @@ export async function evaluateSemanticRulesShadow(
       continue;
     }
 
+    if (evaluation.context?.requires_policy_no_third_party_claim === true && !hasNoThirdPartyTransferClaim(evidencePackage)) {
+      results.push(noShadowEvaluation(rule, "Rule is not applicable because policy has no explicit no-transfer claim."));
+      continue;
+    }
+
     if (totalEvidenceTextLength(evidencePackage) > SEMANTIC_SHADOW_TOTAL_EVIDENCE_TEXT_LIMIT) {
       results.push(
         noShadowEvaluation(
@@ -167,7 +172,7 @@ function evidenceText(evidence: Evidence, fact: Fact): string | undefined {
   const value = fact.value;
   const candidates = [payload.text, payload.context, payload.excerpt, value.text, value.context];
   const text = candidates.find((candidate): candidate is string => typeof candidate === "string" && candidate.trim().length > 0);
-  return text?.trim();
+  return text?.trim() ?? structuredEvidenceText(fact, evidence);
 }
 
 function evidenceMetadata(evidence: Evidence, fact: Fact): Record<string, unknown> {
@@ -186,8 +191,83 @@ function evidenceMetadata(evidence: Evidence, fact: Fact): Record<string, unknow
     extractionRootFallback: payload.extractionRootFallback ?? fact.value.extractionRootFallback,
     truncated: payload.truncated === true || fact.value.truncated === true,
     originalTextLength: payload.originalTextLength ?? fact.value.originalTextLength,
-    maxChars: payload.maxChars ?? fact.value.maxChars
+    maxChars: payload.maxChars ?? fact.value.maxChars,
+    semanticCompleteness: payload.semanticCompleteness ?? fact.value.semanticCompleteness,
+    serviceName: payload.service_name ?? fact.value.service_name,
+    serviceCategory: payload.category ?? fact.value.category,
+    signalType: payload.signal_type ?? fact.value.signal_type,
+    providerScope: payload.provider_scope ?? fact.value.provider_scope
   };
+}
+
+function structuredEvidenceText(fact: Fact, evidence: Evidence): string | undefined {
+  if (fact.factType === "form_fields") {
+    return formFieldsEvidenceText(fact);
+  }
+
+  if (fact.factType === "external_service_matches") {
+    return externalServiceEvidenceText(fact);
+  }
+
+  return undefined;
+}
+
+function formFieldsEvidenceText(fact: Fact): string | undefined {
+  const fields = Array.isArray(fact.value.fields) ? fact.value.fields : [];
+  const pdFields = fields
+    .map((field) => (field && typeof field === "object" ? (field as Record<string, unknown>) : undefined))
+    .filter((field): field is Record<string, unknown> => Array.isArray(field?.personalDataCategories) && field.personalDataCategories.length > 0);
+  if (pdFields.length === 0) {
+    return undefined;
+  }
+
+  const fieldText = pdFields
+    .map((field) => {
+      const categories = (field.personalDataCategories as unknown[]).filter((item): item is string => typeof item === "string").join(", ");
+      const descriptors = [field.label, field.placeholder, field.name, field.id, field.autocomplete, field.type]
+        .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+        .join(" / ");
+      return `${categories}${descriptors ? ` (${descriptors})` : ""}`;
+    })
+    .join("; ");
+
+  return `Form fields with personal data on ${sanitizeUrlForModel(fact.pageUrl) ?? "the checked page"}: ${fieldText}. Technical fields without personal-data categories are not included.`;
+}
+
+function externalServiceEvidenceText(fact: Fact): string | undefined {
+  const serviceName = asString(fact.value.service_name);
+  const category = asString(fact.value.category);
+  const signalType = asString(fact.value.signal_type);
+  const matchedHost = asString(fact.value.matched_host);
+  const providerScope = asString(fact.value.provider_scope);
+  if (!serviceName && !category && !matchedHost) {
+    return undefined;
+  }
+
+  return [
+    `Relevant external service detected on ${sanitizeUrlForModel(fact.pageUrl) ?? "the checked page"}:`,
+    serviceName ? `service ${serviceName}` : undefined,
+    category ? `category ${category}` : undefined,
+    signalType ? `signal ${signalType}` : undefined,
+    matchedHost ? `host ${matchedHost}` : undefined,
+    providerScope ? `provider scope ${providerScope}` : undefined
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function hasNoThirdPartyTransferClaim(evidence: SemanticEvidenceExcerpt[]): boolean {
+  return evidence.some((item) => {
+    if (item.metadata?.factType !== "privacy_policy_text") {
+      return false;
+    }
+    const text = item.excerpt.toLowerCase();
+    return [
+      /не\s+переда[её]м\s+(?:персональные\s+данные\s+)?(?:третьим\s+лицам|третьим\s+сторонам)/,
+      /персональные\s+данные\s+(?:третьим\s+лицам|третьим\s+сторонам)\s+не\s+(?:передаются|предоставляются|раскрываются)/,
+      /не\s+(?:предоставляем|раскрываем)\s+персональные\s+данные\s+(?:третьим\s+лицам|третьим\s+сторонам)/
+    ].some((pattern) => pattern.test(text));
+  });
 }
 
 function evidenceCompleteness(evidence: Evidence, fact: Fact): SemanticEvidenceCompleteness {
