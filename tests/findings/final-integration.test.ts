@@ -98,7 +98,10 @@ function semanticProvider(observation: "PRESENT" | "ABSENT" | "AMBIGUOUS") {
 
 function ruleSpecificSemanticProvider() {
   const markers: Record<string, string> = {
+    "PD-005": "Отдельность согласия",
     "PD-008": "ТЕКСТ_СОГЛАСИЯ",
+    "PD-009": "Объём согласия",
+    "PD-010": "Рекламное согласие",
     "PD-013": "ЦЕЛИ_ОБРАБОТКИ",
     "PD-014": "КАТЕГОРИИ_ДАННЫХ",
     "PD-015": "СРОКИ_ХРАНЕНИЯ",
@@ -374,6 +377,27 @@ describe("final production finding integration", () => {
       scan.id,
       "consent_text",
       {
+        text: "Отдельность согласия: согласие объединено с офертой.",
+        documentType: "HTML",
+        fetchStatus: 200,
+        fetchContentType: "text/html",
+        contentLimited: false,
+        interstitialDetected: false,
+        extractionSucceeded: true,
+        extractionRoot: "main",
+        extractionRootFallback: false,
+        truncated: false,
+        originalTextLength: 52,
+        maxChars: 50_000
+      },
+      "Отдельность согласия: согласие объединено с офертой.",
+      "https://example.test/consent#separate"
+    );
+    await factWithEvidence(
+      db,
+      scan.id,
+      "consent_text",
+      {
         text: "ТЕКСТ_СОГЛАСИЯ: в тексте согласия нет цели обработки.",
         documentType: "HTML",
         fetchStatus: 200,
@@ -389,6 +413,49 @@ describe("final production finding integration", () => {
       },
       "ТЕКСТ_СОГЛАСИЯ: в тексте согласия нет цели обработки. https://example.test/consent#purpose",
       "https://example.test/consent#purpose"
+    );
+    await factWithEvidence(
+      db,
+      scan.id,
+      "consent_text",
+      {
+        text: "Объём согласия: в согласии указан неограниченный объём обработки.",
+        documentType: "HTML",
+        fetchStatus: 200,
+        fetchContentType: "text/html",
+        contentLimited: false,
+        interstitialDetected: false,
+        extractionSucceeded: true,
+        extractionRoot: "main",
+        extractionRootFallback: false,
+        truncated: false,
+        originalTextLength: 65,
+        maxChars: 50_000
+      },
+      "Объём согласия: в согласии указан неограниченный объём обработки.",
+      "https://example.test/consent#scope"
+    );
+    await factWithEvidence(
+      db,
+      scan.id,
+      "marketing_consent_control_found",
+      {
+        found: true,
+        text: "Рекламное согласие: рекламное согласие объединено с обязательными условиями.",
+        documentType: "HTML",
+        fetchStatus: 200,
+        fetchContentType: "text/html",
+        contentLimited: false,
+        interstitialDetected: false,
+        extractionSucceeded: true,
+        extractionRoot: "main",
+        extractionRootFallback: false,
+        truncated: false,
+        originalTextLength: 78,
+        maxChars: 50_000
+      },
+      "Рекламное согласие: рекламное согласие объединено с обязательными условиями.",
+      "https://example.test/consent#marketing"
     );
     await factWithEvidence(
       db,
@@ -488,15 +555,30 @@ describe("final production finding integration", () => {
       return [finding.id, await getEvidenceByIds(db, ids)];
     })));
     const views = buildFindingViewModels(findings, evidenceByFindingId);
+    const pd005 = views.find((finding) => finding.ruleId === "PD-005")!;
     const pd008 = views.find((finding) => finding.ruleId === "PD-008")!;
+    const pd009 = views.find((finding) => finding.ruleId === "PD-009")!;
+    const pd010 = views.find((finding) => finding.ruleId === "PD-010")!;
     const pd013 = views.find((finding) => finding.ruleId === "PD-013")!;
     const pd014 = views.find((finding) => finding.ruleId === "PD-014")!;
     const pd015 = views.find((finding) => finding.ruleId === "PD-015")!;
     const pd016 = views.find((finding) => finding.ruleId === "PD-016")!;
 
+    expect(pd005.evidence[0]).toMatchObject({
+      pageUrl: "https://example.test/consent#separate",
+      detail: expect.stringContaining("согласие объединено с офертой")
+    });
     expect(pd008.evidence[0]).toMatchObject({
       pageUrl: "https://example.test/consent#purpose",
       detail: expect.stringContaining("в тексте согласия нет цели обработки")
+    });
+    expect(pd009.evidence[0]).toMatchObject({
+      pageUrl: "https://example.test/consent#scope",
+      detail: expect.stringContaining("в согласии указан неограниченный объём обработки")
+    });
+    expect(pd010.evidence[0]).toMatchObject({
+      pageUrl: "https://example.test/consent#marketing",
+      detail: expect.stringContaining("рекламное согласие объединено с обязательными условиями")
     });
     expect(pd013.evidence[0]).toMatchObject({
       pageUrl: "https://example.test/privacy#purposes",
@@ -515,7 +597,7 @@ describe("final production finding integration", () => {
       detail: expect.stringContaining("в документе нет порядка обращений")
     });
 
-    const pilotViews = [pd008, pd013, pd014, pd015, pd016];
+    const pilotViews = [pd005, pd008, pd009, pd010, pd013, pd014, pd015, pd016];
     const rendered = JSON.stringify(pilotViews.map((finding) => finding.evidence));
     expect(rendered).not.toContain("ТЕКСТ_СОГЛАСИЯ");
     expect(rendered).not.toContain("ЦЕЛИ_ОБРАБОТКИ");
@@ -523,6 +605,10 @@ describe("final production finding integration", () => {
     expect(rendered).not.toContain("СРОКИ_ХРАНЕНИЯ");
     expect(rendered).not.toContain("ПОРЯДОК_ОБРАЩЕНИЙ");
     expect(pd008.evidence[0].detail).not.toContain("https://example.test/consent#purpose");
+    expect(pd008.evidence[0].detail).not.toContain("согласие объединено с офертой");
+    expect(pd008.evidence[0].detail).not.toContain("неограниченный объём обработки");
+    expect(pd009.evidence[0].detail).not.toContain("в тексте согласия нет цели обработки");
+    expect(pd010.evidence[0].detail).not.toContain("в тексте согласия нет цели обработки");
     expect(pd016.evidence[0].detail).not.toContain("целей обработки");
     expect(pd016.evidence[0].detail).not.toContain("категорий данных");
     expect(pd016.evidence[0].detail).not.toContain("сроков хранения");

@@ -11,7 +11,7 @@ import {
 } from "@/semantic-evaluator/shadow";
 import type { SemanticModelRequest } from "@/semantic-evaluator/types";
 
-const pilotRuleIds = ["PD-008", "PD-013", "PD-014", "PD-015", "PD-016"] as const;
+const pilotRuleIds = ["PD-005", "PD-008", "PD-009", "PD-010", "PD-013", "PD-014", "PD-015", "PD-016"] as const;
 
 const scan: Scan = {
   id: "scan-1",
@@ -53,10 +53,17 @@ function semanticResponse(observation: "PRESENT" | "ABSENT" | "AMBIGUOUS", evide
 }
 
 function semanticFixture(ruleId: (typeof pilotRuleIds)[number], marker: "GOLDEN_PASS" | "GOLDEN_FAIL" | "GOLDEN_MANUAL") {
-  const factType = ruleId === "PD-008" ? "consent_text" : "privacy_policy_text";
+  const factType =
+    ruleId === "PD-010"
+      ? "marketing_consent_control_found"
+      : ["PD-005", "PD-008", "PD-009"].includes(ruleId)
+        ? "consent_text"
+        : "privacy_policy_text";
   const text =
-    ruleId === "PD-008"
+    ["PD-005", "PD-008", "PD-009"].includes(ruleId)
       ? `${marker}: согласие на обработку персональных данных рядом с формой.`
+      : ruleId === "PD-010"
+        ? `${marker}: согласие на рекламную рассылку рядом с формой.`
       : `${marker}: политика обработки персональных данных, содержательный текст документа.`;
   const fact: Fact = {
     id: `fact-${ruleId}`,

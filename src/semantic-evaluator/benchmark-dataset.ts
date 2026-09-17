@@ -1,12 +1,12 @@
 import { loadPilotSemanticRuntimeRules } from "@/legal-rules/runtime";
 import type { SemanticEvaluationInput, SemanticEvaluationStatus, SemanticEvidenceCompleteness, SemanticObservation } from "./types";
 
-export type PilotBenchmarkRuleId = "PD-008" | "PD-013" | "PD-014" | "PD-015" | "PD-016";
+export type PilotBenchmarkRuleId = "PD-005" | "PD-008" | "PD-009" | "PD-010" | "PD-013" | "PD-014" | "PD-015" | "PD-016";
 export type BenchmarkExpectedVerdict = SemanticEvaluationStatus;
 export type BenchmarkExpectedObservation = SemanticObservation;
 
 export interface BenchmarkEvidence {
-  factType: "consent_text" | "privacy_policy_text";
+  factType: "consent_text" | "privacy_policy_text" | "marketing_consent_control_found" | "rendered_marketing_consent_found";
   excerpt: string;
   completeness: SemanticEvidenceCompleteness;
   truncated?: boolean;
@@ -31,6 +31,15 @@ const ruleCriteria = new Map(
 );
 
 export const PILOT_BENCHMARK_CASES: PilotBenchmarkCase[] = [
+  c("PD-005-P01", "PD-005", "PASS", "PRESENT", "Personal-data consent is a separate checkbox.", consent("Отдельный флажок: я согласен на обработку персональных данных для обработки заявки.")),
+  c("PD-005-P02", "PD-005", "PASS", "PRESENT", "Offer and personal-data consent are separate controls.", consent("Флажок 1: принимаю оферту. Флажок 2: согласен на обработку персональных данных.")),
+  c("PD-005-P03", "PD-005", "PASS", "PRESENT", "Nearby offer link does not merge consent.", consent("Я согласен на обработку персональных данных для обратной связи. Оферта размещена по отдельной ссылке.")),
+  c("PD-005-F01", "PD-005", "FAIL", "ABSENT", "One checkbox combines offer and PD consent.", consent("Один флажок: принимаю оферту и даю согласие на обработку персональных данных.", "COMPLETE")),
+  c("PD-005-F02", "PD-005", "FAIL", "ABSENT", "One sentence combines user agreement and PD consent.", consent("Нажимая кнопку, пользователь принимает пользовательское соглашение и соглашается на обработку персональных данных.", "COMPLETE")),
+  c("PD-005-F03", "PD-005", "FAIL", "ABSENT", "One mandatory agreement combines all independent terms.", consent("Согласен с условиями сервиса, договором и обработкой персональных данных.", "COMPLETE")),
+  c("PD-005-M01", "PD-005", "MANUAL_CHECK", "ABSENT", "Partial fragment cannot prove combined consent.", consent("Согласен с условиями.", "PARTIAL")),
+  c("PD-005-M02", "PD-005", "MANUAL_CHECK", "AMBIGUOUS", "Wording is too unclear to decide separation.", consent("Нажимая кнопку, подтверждаю согласие с документами сайта.")),
+
   c("PD-008-P01", "PD-008", "PASS", "PRESENT", "Consent states a concrete callback purpose.", consent("Согласие дается на обработку персональных данных для обратной связи по заявке и подготовки ответа.")),
   c("PD-008-P02", "PD-008", "PASS", "PRESENT", "Consent states order processing purpose.", consent("Нажимая кнопку, пользователь соглашается на обработку данных для оформления заказа и доставки выбранного товара.")),
   c("PD-008-P03", "PD-008", "PASS", "PRESENT", "Consent states account support purpose.", consent("Я согласен на обработку данных для регистрации личного кабинета и оказания технической поддержки.")),
@@ -39,6 +48,24 @@ export const PILOT_BENCHMARK_CASES: PilotBenchmarkCase[] = [
   c("PD-008-F03", "PD-008", "FAIL", "ABSENT", "Consent says data is processed but not why.", consent("Отправляя форму, вы разрешаете оператору обрабатывать указанные персональные данные.", "COMPLETE")),
   c("PD-008-M01", "PD-008", "MANUAL_CHECK", "ABSENT", "Fragment is explicitly partial and too short to decide.", consent("Согласен с условиями.", "PARTIAL")),
   c("PD-008-M02", "PD-008", "MANUAL_CHECK", "ABSENT", "Text refers to an omitted linked document.", consent("Согласие предоставляется на условиях, указанных в документе по ссылке ниже.", "PARTIAL")),
+
+  c("PD-009-P01", "PD-009", "PASS", "PRESENT", "Consent scope is limited to request processing.", consent("Согласие дается на обработку имени и телефона для ответа на заявку.")),
+  c("PD-009-P02", "PD-009", "PASS", "PRESENT", "Word any is limited by request context.", consent("Согласен на любые действия с данными, указанными в этой заявке, необходимые для подготовки ответа.")),
+  c("PD-009-P03", "PD-009", "PASS", "PRESENT", "Consent names limited data categories.", consent("Оператор обрабатывает имя, телефон и электронную почту для оформления заказа.")),
+  c("PD-009-F01", "PD-009", "FAIL", "ABSENT", "Consent allows any data for any purpose.", consent("Согласен на обработку любых персональных данных для любых целей любыми способами.", "COMPLETE")),
+  c("PD-009-F02", "PD-009", "FAIL", "ABSENT", "Consent gives unlimited processing actions without context.", consent("Пользователь разрешает оператору совершать любые действия с любыми данными без ограничений.", "COMPLETE")),
+  c("PD-009-F03", "PD-009", "FAIL", "ABSENT", "Consent has no concrete processing scope.", consent("Я даю согласие на обработку персональных данных в полном объеме.", "COMPLETE")),
+  c("PD-009-M01", "PD-009", "MANUAL_CHECK", "ABSENT", "Partial fragment cannot prove unlimited scope.", consent("Согласен на обработку данных.", "PARTIAL")),
+  c("PD-009-M02", "PD-009", "MANUAL_CHECK", "AMBIGUOUS", "Scope is vague but not clearly unlimited.", consent("Согласен на обработку данных в рамках взаимодействия с сайтом.")),
+
+  c("PD-010-P01", "PD-010", "PASS", "PRESENT", "Marketing consent has a separate optional control.", marketing("Отдельный необязательный флажок: хочу получать рекламные сообщения и акции.")),
+  c("PD-010-P02", "PD-010", "PASS", "PRESENT", "Marketing checkbox is separate from offer checkbox.", marketing("Флажок 1: принимаю оферту. Флажок 2: согласен получать рекламную рассылку.")),
+  c("PD-010-P03", "PD-010", "PASS", "PRESENT", "Marketing consent is separate from PD consent.", marketing("Флажок 1: согласен на обработку персональных данных. Флажок 2: согласен получать новости и специальные предложения.")),
+  c("PD-010-F01", "PD-010", "FAIL", "ABSENT", "One checkbox combines PD consent and marketing.", marketing("Один обязательный флажок: согласен на обработку персональных данных и получение рекламной рассылки.", "COMPLETE")),
+  c("PD-010-F02", "PD-010", "FAIL", "ABSENT", "One checkbox combines offer acceptance and marketing.", marketing("Нажимая кнопку, принимаю оферту и соглашаюсь получать рекламные сообщения.", "COMPLETE")),
+  c("PD-010-F03", "PD-010", "FAIL", "ABSENT", "Marketing is bundled into user agreement acceptance.", marketing("Принимаю пользовательское соглашение, включая согласие на маркетинговые сообщения.", "COMPLETE")),
+  c("PD-010-M01", "PD-010", "MANUAL_CHECK", "ABSENT", "Partial fragment cannot prove marketing consent separation.", marketing("Согласен получать сообщения.", "PARTIAL")),
+  c("PD-010-M02", "PD-010", "MANUAL_CHECK", "AMBIGUOUS", "Wording is marketing-like but separation is unclear.", marketing("Подтверждаю согласие на условия и уведомления сайта.")),
 
   c("PD-013-P01", "PD-013", "PASS", "PRESENT", "Policy lists communication and service purposes.", policy("Оператор обрабатывает персональные данные для ответа на обращения, предоставления сервиса и исполнения договора с пользователем.")),
   c("PD-013-P02", "PD-013", "PASS", "PRESENT", "Policy lists order and support purposes.", policy("Целями обработки являются оформление заказов, доставка, клиентская поддержка и направление сервисных уведомлений.")),
@@ -118,6 +145,10 @@ function c(
 
 function consent(excerpt: string, completeness: SemanticEvidenceCompleteness = "UNKNOWN"): BenchmarkEvidence {
   return { factType: "consent_text", excerpt, completeness };
+}
+
+function marketing(excerpt: string, completeness: SemanticEvidenceCompleteness = "UNKNOWN"): BenchmarkEvidence {
+  return { factType: "marketing_consent_control_found", excerpt, completeness };
 }
 
 function policy(

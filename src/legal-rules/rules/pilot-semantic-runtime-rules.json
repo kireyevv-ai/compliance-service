@@ -27,6 +27,87 @@
     "last_verified_at": "2026-09-10"
   },
   {
+    "rule_id": "PD-005",
+    "version": "0.2-shadow",
+    "title": "Consent to personal-data processing is separate from other terms",
+    "pass_summary": "Consent to personal-data processing is presented separately from other terms.",
+    "module": "PERSONAL_DATA",
+    "evaluator_type": "LLM_SEMANTIC",
+    "legal_strength": "MANDATORY",
+    "status_if_triggered": "FAIL",
+    "applies_to": ["B2B", "B2C_SERVICE", "ECOMMERCE", "OTHER"],
+    "required_facts": ["consent_text"],
+    "evidence_requirements": ["consent_text", "rendered_consent_text"],
+    "legal_basis": [],
+    "severity": "MEDIUM",
+    "evaluation": {
+      "kind": "SEMANTIC_CRITERION",
+      "criterion": "Determine whether the supplied consent context shows that consent to personal-data processing is presented separately from accepting an offer, user agreement, or other independent terms. Treat the required element as PRESENT when the evidence shows a distinct personal-data consent control or distinct wording for personal-data consent, even if a separate offer or agreement control is nearby. Treat it as ABSENT only when the same control or same consent wording combines personal-data consent with accepting an offer, user agreement, or other independent terms. Do not treat the mere presence of a nearby offer link as ABSENT.",
+      "evidence_fact_types": ["consent_text", "rendered_consent_text"]
+    },
+    "remediation": "Keep remediation in application logic; this shadow rule does not create user-facing findings.",
+    "confidence_policy": {
+      "fixed_confidence": 0.8
+    },
+    "limitations": ["Shadow-mode semantic pilot only. Does not create production Findings."],
+    "effective_from": "2026-09-17",
+    "last_verified_at": "2026-09-17"
+  },
+  {
+    "rule_id": "PD-009",
+    "version": "0.2-shadow",
+    "title": "Consent text has a concrete and limited processing scope",
+    "pass_summary": "Consent text has a concrete and limited processing scope.",
+    "module": "PERSONAL_DATA",
+    "evaluator_type": "LLM_SEMANTIC",
+    "legal_strength": "MANDATORY",
+    "status_if_triggered": "FAIL",
+    "applies_to": ["B2B", "B2C_SERVICE", "ECOMMERCE", "OTHER"],
+    "required_facts": ["consent_text"],
+    "evidence_requirements": ["consent_text", "rendered_consent_text"],
+    "legal_basis": [],
+    "severity": "MEDIUM",
+    "evaluation": {
+      "kind": "SEMANTIC_CRITERION",
+      "criterion": "Determine whether the supplied consent text contains a concrete and limited subject or scope of personal-data processing and does not use obviously unlimited wording such as 'any data', 'any purposes', or 'any actions' without limiting context. Treat the required element as PRESENT when the consent identifies a limited context such as a specific form, request, order, callback, account action, or named data categories/actions. Treat it as ABSENT when the consent is unlimited or open-ended by itself. Do not treat the word 'any' as ABSENT when the surrounding text clearly limits it to a concrete request, form, service, or legal context.",
+      "evidence_fact_types": ["consent_text", "rendered_consent_text"]
+    },
+    "remediation": "Keep remediation in application logic; this shadow rule does not create user-facing findings.",
+    "confidence_policy": {
+      "fixed_confidence": 0.8
+    },
+    "limitations": ["Shadow-mode semantic pilot only. Does not create production Findings."],
+    "effective_from": "2026-09-17",
+    "last_verified_at": "2026-09-17"
+  },
+  {
+    "rule_id": "PD-010",
+    "version": "0.2-shadow",
+    "title": "Marketing consent is separate from mandatory terms",
+    "pass_summary": "Marketing consent is presented separately from mandatory terms.",
+    "module": "PERSONAL_DATA",
+    "evaluator_type": "LLM_SEMANTIC",
+    "legal_strength": "MANDATORY",
+    "status_if_triggered": "FAIL",
+    "applies_to": ["B2B", "B2C_SERVICE", "ECOMMERCE", "OTHER"],
+    "required_facts": [],
+    "evidence_requirements": ["marketing_consent_control_found", "rendered_marketing_consent_found"],
+    "legal_basis": [],
+    "severity": "MEDIUM",
+    "evaluation": {
+      "kind": "SEMANTIC_CRITERION",
+      "criterion": "Determine whether the supplied marketing or advertising consent context shows that consent to advertising or marketing messages is presented separately from mandatory consent to personal-data processing, contract acceptance, offer acceptance, user agreement, or other mandatory terms. Treat the required element as PRESENT when marketing consent has its own separate control or clearly separate optional wording. Treat it as ABSENT when the same mandatory control or same wording combines marketing consent with personal-data consent, contract, offer, user agreement, or other mandatory terms.",
+      "evidence_fact_types": ["marketing_consent_control_found", "rendered_marketing_consent_found"]
+    },
+    "remediation": "Keep remediation in application logic; this shadow rule does not create user-facing findings.",
+    "confidence_policy": {
+      "fixed_confidence": 0.8
+    },
+    "limitations": ["Shadow-mode semantic pilot only. Does not create production Findings."],
+    "effective_from": "2026-09-17",
+    "last_verified_at": "2026-09-17"
+  },
+  {
     "rule_id": "PD-013",
     "version": "0.2-shadow",
     "title": "Privacy policy describes personal-data processing purposes",
