@@ -77,16 +77,19 @@ function evaluateBuiltin(ruleId: string, index: FactIndex): BuiltinEvaluation {
     case "PD-001":
       return evaluatePd001(index);
     case "PD-002":
-      return evaluateAccessibility(index, "policy_url_accessible", {
-        fail: "На сайте найдена ссылка на политику обработки персональных данных, но URL политики недоступен или возвращает ошибку.",
-        pass: "Ссылка на политику обработки персональных данных доступна по результату Basic Crawler."
-      });
+      return evaluatePd002(index);
     case "PD-003":
       return evaluatePd003(index);
+    case "PD-004":
+      return evaluatePd004(index);
     case "PD-006":
       return evaluatePd006(index);
     case "PD-011":
       return evaluatePd011(index);
+    case "PD-020":
+      return evaluatePd020(index);
+    case "PD-021":
+      return evaluatePd021(index);
     case "EC-001":
       return evaluateEc001(index);
     case "EC-002":
@@ -213,6 +216,70 @@ function evaluatePd003(index: FactIndex): BuiltinEvaluation {
   return noBuiltin("Policy access from collection pages was not observed");
 }
 
+function evaluatePd002(index: FactIndex): BuiltinEvaluation {
+  const policyFound = boolFact(index, "privacy_policy_link_found");
+  if (!policyFound) {
+    return noBuiltin("Privacy policy link was not observed");
+  }
+
+  const accessFacts = factsByType(index, "policy_url_accessible");
+  if (accessFacts.length === 0) {
+    return noBuiltin("policy_url_accessible was not observed by the crawler");
+  }
+
+  if (accessFacts.some((fact) => fact.value.accessible === true)) {
+    return {
+      status: "PASS",
+      evidenceFactTypes: ["policy_url_accessible"],
+      explanation: "Ссылка на политику обработки персональных данных доступна по результату Basic Crawler."
+    };
+  }
+
+  const failing = accessFacts.find((fact) => isTechnicalDocumentFailureStatus(Number(fact.value.status)));
+  if (failing) {
+    return {
+      status: "FAIL",
+      evidenceIds: collectEvidenceIdsForFacts(index, [failing]),
+      evidenceFactTypes: [],
+      explanation: "На сайте найдена ссылка на политику обработки персональных данных, но URL политики недоступен или возвращает техническую ошибку."
+    };
+  }
+
+  return noBuiltin("Policy URL accessibility result is not a deterministic technical failure");
+}
+
+function evaluatePd004(index: FactIndex): BuiltinEvaluation {
+  const policyFound = boolFact(index, "privacy_policy_link_found");
+  if (!policyFound) {
+    return noBuiltin("Privacy policy link was not observed");
+  }
+
+  const accessFacts = factsByType(index, "policy_url_accessible");
+  if (accessFacts.length === 0) {
+    return noBuiltin("policy_url_accessible was not observed by the crawler");
+  }
+
+  const restricted = accessFacts.find((fact) => isAccessRestrictionStatus(Number(fact.value.status)));
+  if (restricted) {
+    return {
+      status: "FAIL",
+      evidenceIds: collectEvidenceIdsForFacts(index, [restricted]),
+      evidenceFactTypes: [],
+      explanation: "Ссылка на политику обработки персональных данных найдена, но документ закрыт для обычного публичного доступа."
+    };
+  }
+
+  if (accessFacts.some((fact) => fact.value.accessible === true)) {
+    return {
+      status: "PASS",
+      evidenceFactTypes: ["policy_url_accessible"],
+      explanation: "Политика обработки персональных данных публично доступна без ограничения доступа."
+    };
+  }
+
+  return noBuiltin("Policy URL was not publicly accessible for a deterministic access-restriction reason");
+}
+
 function evaluatePd006(index: FactIndex): BuiltinEvaluation {
   const pdCollection = boolFact(index, "personal_data_collection_found");
   if (!pdCollection) {
@@ -288,6 +355,95 @@ function evaluatePd011(index: FactIndex): BuiltinEvaluation {
       ...matched.map((item) => item.checked).filter((fact): fact is Fact => Boolean(fact))
     ]),
     explanation: "Согласие на рекламные или маркетинговые сообщения найдено и не отмечено заранее."
+  };
+}
+
+function evaluatePd020(index: FactIndex): BuiltinEvaluation {
+  const pdPages = personalDataCollectionPages(index);
+  if (pdPages.size === 0) {
+    return noBuiltin("Personal-data collection page was not detected");
+  }
+  if (!hasFact(index, "external_service_detected")) {
+    return noBuiltin("External-service detection result is missing");
+  }
+
+  const foreignMatches = factsByType(index, "external_service_matches").filter(
+    (fact) =>
+      fact.pageUrl &&
+      pdPages.has(fact.pageUrl) &&
+      fact.value.provider_scope === "FOREIGN_PROVIDER" &&
+      fact.value.signal_type !== "FORM_ACTION"
+  );
+  if (foreignMatches.length > 0) {
+    return {
+      status: "WARNING",
+      evidenceIds: collectEvidenceIdsForFacts(index, [...foreignMatches, ...personalDataCollectionFactsOnPages(index, pdPages)]),
+      evidenceFactTypes: [],
+      explanation: "На странице, где собираются персональные данные, обнаружен технический сигнал иностранного внешнего сервиса. Это не является выводом о нарушении локализации или трансграничной передаче."
+    };
+  }
+
+  if (!completeCoverage(index)) {
+    return noBuiltin("Crawl coverage is incomplete; absence of foreign services on personal-data pages cannot be concluded");
+  }
+
+  return {
+    status: "PASS",
+    evidenceFactTypes: ["external_service_detected"],
+    evidenceIds: collectEvidenceIdsForFacts(index, personalDataCollectionFactsOnPages(index, pdPages)),
+    explanation: "На проверенных страницах сбора персональных данных не обнаружены иностранные внешние сервисы."
+  };
+}
+
+function evaluatePd021(index: FactIndex): BuiltinEvaluation {
+  const pdForms = personalDataForms(index);
+  if (pdForms.length === 0) {
+    return noBuiltin("Personal-data form was not detected");
+  }
+
+  const actionsByForm = formActionFactsByForm(index);
+  const matched = pdForms.map((form) => ({ form, action: actionsByForm.get(formKey(form)) }));
+  if (matched.some((item) => !item.action)) {
+    return noBuiltin("Personal-data form action target was not fully observed");
+  }
+
+  const foreignActionMatches = factsByType(index, "external_service_matches").filter(
+    (fact) => fact.value.signal_type === "FORM_ACTION" && fact.value.provider_scope === "FOREIGN_PROVIDER"
+  );
+  const foreignTarget = matched.find((item) =>
+    foreignActionMatches.some(
+      (match) =>
+        match.pageUrl === item.form.pageUrl &&
+        typeof item.action?.value.host === "string" &&
+        match.value.matched_host === item.action.value.host
+    )
+  );
+  if (foreignTarget) {
+    return {
+      status: "WARNING",
+      evidenceIds: collectEvidenceIdsForFacts(index, [
+        foreignTarget.form,
+        foreignTarget.action!,
+        ...foreignActionMatches.filter(
+          (match) => match.pageUrl === foreignTarget.form.pageUrl && match.value.matched_host === foreignTarget.action?.value.host
+        )
+      ]),
+      evidenceFactTypes: [],
+      explanation: "Форма, собирающая персональные данные, отправляет данные на внешний иностранный endpoint. Это технический сигнал для проверки, а не вывод о незаконной трансграничной передаче."
+    };
+  }
+
+  if (matched.some((item) => item.action?.value.externalToPageHost === true && !hasClassifiedFormAction(index, item.action))) {
+    return noBuiltin("External personal-data form action target is not classified");
+  }
+
+  return {
+    status: "PASS",
+    evidenceIds: collectEvidenceIdsForFacts(index, [
+      ...pdForms,
+      ...matched.map((item) => item.action).filter((fact): fact is Fact => Boolean(fact))
+    ]),
+    explanation: "Для найденных форм сбора персональных данных не обнаружена отправка на иностранный внешний endpoint."
   };
 }
 
@@ -574,6 +730,14 @@ function accessibilityFact(index: FactIndex, factType: string): boolean | undefi
   return undefined;
 }
 
+function isAccessRestrictionStatus(status: number): boolean {
+  return status === 401;
+}
+
+function isTechnicalDocumentFailureStatus(status: number): boolean {
+  return status === 404 || status === 410;
+}
+
 function completeCoverage(index: FactIndex): boolean {
   return index.facts.some(
     (fact) =>
@@ -592,6 +756,52 @@ function sellerKind(index: FactIndex): string | undefined {
 
 function factsByType(index: FactIndex, factType: string): Fact[] {
   return index.facts.filter((fact) => fact.factType === factType);
+}
+
+function personalDataCollectionPages(index: FactIndex): Set<string> {
+  return new Set(personalDataCollectionFacts(index).map((fact) => fact.pageUrl).filter((pageUrl): pageUrl is string => Boolean(pageUrl)));
+}
+
+function personalDataCollectionFacts(index: FactIndex): Fact[] {
+  return index.facts.filter(
+    (fact) =>
+      (fact.factType === "personal_data_collection_found" || fact.factType === "rendered_personal_data_collection_found") &&
+      fact.value.found === true
+  );
+}
+
+function personalDataCollectionFactsOnPages(index: FactIndex, pages: Set<string>): Fact[] {
+  return personalDataCollectionFacts(index).filter((fact) => fact.pageUrl && pages.has(fact.pageUrl));
+}
+
+function personalDataForms(index: FactIndex): Fact[] {
+  return personalDataCollectionFacts(index).filter((fact) => fact.pageUrl && fact.value.formIndex !== undefined);
+}
+
+function formActionFactsByForm(index: FactIndex): Map<string, Fact> {
+  const result = new Map<string, Fact>();
+  for (const fact of index.facts) {
+    if ((fact.factType === "form_action_target" || fact.factType === "rendered_form_action_target") && fact.pageUrl) {
+      result.set(formKey(fact), fact);
+    }
+  }
+  return result;
+}
+
+function formKey(fact: Fact): string {
+  return [fact.pageUrl ?? "", String(fact.value.formIndex ?? "")].join("::");
+}
+
+function hasClassifiedFormAction(index: FactIndex, action: Fact | undefined): boolean {
+  if (!action?.pageUrl || typeof action.value.host !== "string") {
+    return false;
+  }
+  return factsByType(index, "external_service_matches").some(
+    (fact) =>
+      fact.pageUrl === action.pageUrl &&
+      fact.value.signal_type === "FORM_ACTION" &&
+      fact.value.matched_host === action.value.host
+  );
 }
 
 function checkedFactsByControl(index: FactIndex, factType: string): Map<string, Fact> {

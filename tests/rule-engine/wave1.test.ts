@@ -48,6 +48,29 @@ function extractedFact(factType: ExtractedFact["factType"], value: Record<string
   };
 }
 
+function externalServiceMatch(
+  pageUrl: string,
+  signalType: "NETWORK" | "SCRIPT" | "IFRAME" | "FORM_ACTION",
+  providerScope: "FOREIGN_PROVIDER" | "RU_PROVIDER" | "MIXED_REQUIRES_CONTRACT_CHECK",
+  host = providerScope === "FOREIGN_PROVIDER" ? "foreign.example" : "local.example"
+): ExtractedFact {
+  return extractedFact(
+    "external_service_matches",
+    {
+      service_id: `${providerScope.toLowerCase()}-${signalType.toLowerCase()}`,
+      service_name: "Synthetic service",
+      category: "synthetic",
+      matched_host: host,
+      signal_type: signalType,
+      matched_pattern: host,
+      confidence: "HIGH",
+      provider_scope: providerScope,
+      page_url: pageUrl
+    },
+    pageUrl
+  );
+}
+
 function page(url: string, status = 200): CrawledPage {
   return {
     url,
@@ -120,16 +143,19 @@ describe("Wave 1 runtime rule engine", () => {
     db = createTestDb();
   });
 
-  it("loads 18 versioned runtime rules", () => {
+  it("loads 21 versioned runtime rules", () => {
     const rules = loadRuntimeRules();
 
-    expect(rules).toHaveLength(18);
+    expect(rules).toHaveLength(21);
     expect(rules.map((rule) => rule.ruleId)).toEqual([
       "PD-001",
       "PD-002",
       "PD-003",
+      "PD-004",
       "PD-006",
       "PD-011",
+      "PD-020",
+      "PD-021",
       "EC-001",
       "EC-002",
       "EC-003",
@@ -383,6 +409,82 @@ describe("Wave 1 runtime rule engine", () => {
     expect(statusFor(result.evaluations, "EC-002")).toBe("PASS");
   });
 
+  it("separates technical policy accessibility PD-002 from restricted-access PD-004", async () => {
+    const publicPolicy = await evaluateScenario({
+      db,
+      siteType: "B2B",
+      pages: [page("https://example.test/policy", 200)],
+      facts: [
+        extractedFact("privacy_policy_link_found", { found: true }, "https://example.test/"),
+        extractedFact("privacy_policy_url", { url: "https://example.test/policy" })
+      ]
+    });
+    const authRestrictedPolicy = await evaluateScenario({
+      db,
+      siteType: "B2B",
+      pages: [page("https://example.test/policy", 401)],
+      facts: [
+        extractedFact("privacy_policy_link_found", { found: true }, "https://example.test/"),
+        extractedFact("privacy_policy_url", { url: "https://example.test/policy" })
+      ]
+    });
+    const genericForbiddenPolicy = await evaluateScenario({
+      db,
+      siteType: "B2B",
+      pages: [page("https://example.test/policy", 403)],
+      facts: [
+        extractedFact("privacy_policy_link_found", { found: true }, "https://example.test/"),
+        extractedFact("privacy_policy_url", { url: "https://example.test/policy" })
+      ]
+    });
+    const antibotForbiddenPolicy = await evaluateScenario({
+      db,
+      siteType: "B2B",
+      pages: [{ ...page("https://example.test/policy", 403), contentLimited: true }],
+      facts: [
+        extractedFact("privacy_policy_link_found", { found: true }, "https://example.test/"),
+        extractedFact("privacy_policy_url", { url: "https://example.test/policy" }),
+        extractedFact("scan_coverage", { crawlCompleted: true, contentLimited: true }, "https://example.test/")
+      ]
+    });
+    const gonePolicy = await evaluateScenario({
+      db,
+      siteType: "B2B",
+      pages: [page("https://example.test/policy", 410)],
+      facts: [
+        extractedFact("privacy_policy_link_found", { found: true }, "https://example.test/"),
+        extractedFact("privacy_policy_url", { url: "https://example.test/policy" })
+      ]
+    });
+    const transientFailure = await evaluateScenario({
+      db,
+      siteType: "B2B",
+      pages: [page("https://example.test/policy", 500)],
+      facts: [
+        extractedFact("privacy_policy_link_found", { found: true }, "https://example.test/"),
+        extractedFact("privacy_policy_url", { url: "https://example.test/policy" })
+      ]
+    });
+    const policyMissing = await evaluateScenario({
+      db,
+      siteType: "B2B",
+      facts: [
+        extractedFact("privacy_policy_link_found", { found: false, scope: "SITE" }, "https://example.test/")
+      ]
+    });
+
+    expect(statusFor(publicPolicy.evaluations, "PD-004")).toBe("PASS");
+    expect(statusFor(authRestrictedPolicy.evaluations, "PD-004")).toBe("FAIL");
+    expect(statusFor(authRestrictedPolicy.evaluations, "PD-002")).toBe("NO_EVALUATION");
+    expect(statusFor(genericForbiddenPolicy.evaluations, "PD-004")).toBe("NO_EVALUATION");
+    expect(statusFor(antibotForbiddenPolicy.evaluations, "PD-004")).toBe("NO_EVALUATION");
+    expect(statusFor(gonePolicy.evaluations, "PD-002")).toBe("FAIL");
+    expect(statusFor(gonePolicy.evaluations, "PD-004")).toBe("NO_EVALUATION");
+    expect(statusFor(transientFailure.evaluations, "PD-002")).toBe("NO_EVALUATION");
+    expect(statusFor(transientFailure.evaluations, "PD-004")).toBe("NO_EVALUATION");
+    expect(statusFor(policyMissing.evaluations, "PD-004")).toBe("NO_EVALUATION");
+  });
+
   it("evaluates PD-006 only from rendered personal-data consent checked state", async () => {
     const checked = await evaluateScenario({
       db,
@@ -521,6 +623,109 @@ describe("Wave 1 runtime rule engine", () => {
     expect(statusFor(marketingUnchecked.evaluations, "PD-011")).toBe("PASS");
     expect(statusFor(pdConsentOnly.evaluations, "PD-011")).toBe("NO_EVALUATION");
     expect(statusFor(noMarketingContext.evaluations, "PD-011")).toBe("NO_EVALUATION");
+  });
+
+  it("evaluates PD-020 as a same-page foreign-provider risk signal only for personal-data pages", async () => {
+    const pdPage = "https://example.test/form";
+    const ordinaryPage = "https://example.test/about";
+    const triggered = await evaluateScenario({
+      db,
+      siteType: "B2B",
+      facts: [
+        extractedFact("personal_data_collection_found", { found: true, formIndex: 0 }, pdPage),
+        extractedFact("external_service_detected", { detected: true }, "https://example.test/"),
+        externalServiceMatch(pdPage, "SCRIPT", "FOREIGN_PROVIDER", "foreign.example")
+      ]
+    });
+    const foreignOnlyOnOrdinaryPage = await evaluateScenario({
+      db,
+      siteType: "B2B",
+      facts: [
+        extractedFact("personal_data_collection_found", { found: true, formIndex: 0 }, pdPage),
+        extractedFact("external_service_detected", { detected: true }, "https://example.test/"),
+        externalServiceMatch(ordinaryPage, "SCRIPT", "FOREIGN_PROVIDER", "foreign.example")
+      ]
+    });
+    const pdPageWithoutForeignService = await evaluateScenario({
+      db,
+      siteType: "B2B",
+      facts: [
+        extractedFact("scan_coverage", { crawlCompleted: true, contentLimited: false }),
+        extractedFact("personal_data_collection_found", { found: true, formIndex: 0 }, pdPage),
+        extractedFact("external_service_detected", { detected: false, service_count: 0, services: [] }, "https://example.test/")
+      ]
+    });
+    const partialCoverage = await evaluateScenario({
+      db,
+      siteType: "B2B",
+      facts: [
+        extractedFact("scan_coverage", { crawlCompleted: true, contentLimited: true }),
+        extractedFact("personal_data_collection_found", { found: true, formIndex: 0 }, pdPage),
+        extractedFact("external_service_detected", { detected: false, service_count: 0, services: [] }, "https://example.test/")
+      ]
+    });
+
+    expect(statusFor(triggered.evaluations, "PD-020")).toBe("WARNING");
+    expect(statusFor(foreignOnlyOnOrdinaryPage.evaluations, "PD-020")).toBe("NO_EVALUATION");
+    expect(statusFor(pdPageWithoutForeignService.evaluations, "PD-020")).toBe("PASS");
+    expect(statusFor(partialCoverage.evaluations, "PD-020")).toBe("NO_EVALUATION");
+  });
+
+  it("evaluates PD-021 only from a classified form action target of the personal-data form", async () => {
+    const pdPage = "https://example.test/form";
+    const localForm = await evaluateScenario({
+      db,
+      siteType: "B2B",
+      facts: [
+        extractedFact("personal_data_collection_found", { found: true, formIndex: 0 }, pdPage),
+        extractedFact("form_action_target", {
+          formIndex: 0,
+          actionUrl: "https://example.test/submit",
+          host: "example.test",
+          externalToPageHost: false
+        }, pdPage)
+      ]
+    });
+    const foreignTarget = await evaluateScenario({
+      db,
+      siteType: "B2B",
+      facts: [
+        extractedFact("personal_data_collection_found", { found: true, formIndex: 0 }, pdPage),
+        extractedFact("form_action_target", {
+          formIndex: 0,
+          actionUrl: "https://foreign.example/submit",
+          host: "foreign.example",
+          externalToPageHost: true
+        }, pdPage),
+        externalServiceMatch(pdPage, "FORM_ACTION", "FOREIGN_PROVIDER", "foreign.example")
+      ]
+    });
+    const foreignScriptLocalTarget = await evaluateScenario({
+      db,
+      siteType: "B2B",
+      facts: [
+        extractedFact("personal_data_collection_found", { found: true, formIndex: 0 }, pdPage),
+        extractedFact("form_action_target", {
+          formIndex: 0,
+          actionUrl: "https://example.test/submit",
+          host: "example.test",
+          externalToPageHost: false
+        }, pdPage),
+        externalServiceMatch(pdPage, "SCRIPT", "FOREIGN_PROVIDER", "foreign.example")
+      ]
+    });
+    const unknownTarget = await evaluateScenario({
+      db,
+      siteType: "B2B",
+      facts: [
+        extractedFact("personal_data_collection_found", { found: true, formIndex: 0 }, pdPage)
+      ]
+    });
+
+    expect(statusFor(foreignTarget.evaluations, "PD-021")).toBe("WARNING");
+    expect(statusFor(localForm.evaluations, "PD-021")).toBe("PASS");
+    expect(statusFor(foreignScriptLocalTarget.evaluations, "PD-021")).toBe("PASS");
+    expect(statusFor(unknownTarget.evaluations, "PD-021")).toBe("NO_EVALUATION");
   });
 
   it("does not create ECOMMERCE Findings for B2B site type", async () => {
@@ -695,7 +900,7 @@ describe("Wave 1 runtime rule engine", () => {
     expect(statusFor(result.evaluations, "CON-001")).toBe("NO_EVALUATION");
   });
 
-  it("evaluates EC-013 but does not treat foreign provider signals as Wave 1 legal Findings", async () => {
+  it("evaluates EC-013 but does not treat site-level foreign provider signals as PD-020 or PD-021", async () => {
     const result = await evaluateScenario({
       db,
       siteType: "ECOMMERCE",
@@ -708,7 +913,8 @@ describe("Wave 1 runtime rule engine", () => {
     });
 
     expect(statusFor(result.evaluations, "EC-013")).toBe("FAIL");
-    expect(result.evaluations.some((evaluation) => evaluation.ruleId.includes("PD-020"))).toBe(false);
+    expect(statusFor(result.evaluations, "PD-020")).toBe("NO_EVALUATION");
+    expect(statusFor(result.evaluations, "PD-021")).toBe("NO_EVALUATION");
   });
 
   it("does not return FAIL when triggered evidence is missing", async () => {
