@@ -120,14 +120,16 @@ describe("Wave 1 runtime rule engine", () => {
     db = createTestDb();
   });
 
-  it("loads 15 versioned runtime rules", () => {
+  it("loads 18 versioned runtime rules", () => {
     const rules = loadRuntimeRules();
 
-    expect(rules).toHaveLength(15);
+    expect(rules).toHaveLength(18);
     expect(rules.map((rule) => rule.ruleId)).toEqual([
       "PD-001",
       "PD-002",
       "PD-003",
+      "PD-006",
+      "PD-011",
       "EC-001",
       "EC-002",
       "EC-003",
@@ -137,6 +139,7 @@ describe("Wave 1 runtime rule engine", () => {
       "EC-007",
       "EC-008",
       "EC-009",
+      "EC-011",
       "EC-013",
       "CON-001",
       "CON-002"
@@ -380,6 +383,146 @@ describe("Wave 1 runtime rule engine", () => {
     expect(statusFor(result.evaluations, "EC-002")).toBe("PASS");
   });
 
+  it("evaluates PD-006 only from rendered personal-data consent checked state", async () => {
+    const checked = await evaluateScenario({
+      db,
+      siteType: "B2B",
+      facts: [
+        extractedFact("personal_data_collection_found", { found: true }, "https://example.test/form"),
+        extractedFact("rendered_consent_control_found", {
+          found: true,
+          personalDataConsent: true,
+          formIndex: 0,
+          controlIndex: 1
+        }, "https://example.test/form"),
+        extractedFact("rendered_consent_checked", {
+          checked: true,
+          formIndex: 0,
+          controlIndex: 1
+        }, "https://example.test/form")
+      ]
+    });
+    const unchecked = await evaluateScenario({
+      db,
+      siteType: "B2B",
+      facts: [
+        extractedFact("personal_data_collection_found", { found: true }, "https://example.test/form"),
+        extractedFact("rendered_consent_control_found", {
+          found: true,
+          personalDataConsent: true,
+          formIndex: 0,
+          controlIndex: 1
+        }, "https://example.test/form"),
+        extractedFact("rendered_consent_checked", {
+          checked: false,
+          formIndex: 0,
+          controlIndex: 1
+        }, "https://example.test/form")
+      ]
+    });
+    const missingState = await evaluateScenario({
+      db,
+      siteType: "B2B",
+      facts: [
+        extractedFact("personal_data_collection_found", { found: true }, "https://example.test/form"),
+        extractedFact("rendered_consent_control_found", {
+          found: true,
+          personalDataConsent: true,
+          formIndex: 0,
+          controlIndex: 1
+        }, "https://example.test/form")
+      ]
+    });
+    const unrelatedCheckbox = await evaluateScenario({
+      db,
+      siteType: "B2B",
+      facts: [
+        extractedFact("personal_data_collection_found", { found: true }, "https://example.test/form"),
+        extractedFact("rendered_consent_control_found", {
+          found: true,
+          personalDataConsent: false,
+          formIndex: 0,
+          controlIndex: 1
+        }, "https://example.test/form"),
+        extractedFact("rendered_consent_checked", {
+          checked: true,
+          formIndex: 0,
+          controlIndex: 1
+        }, "https://example.test/form")
+      ]
+    });
+
+    expect(statusFor(checked.evaluations, "PD-006")).toBe("FAIL");
+    expect(statusFor(unchecked.evaluations, "PD-006")).toBe("PASS");
+    expect(statusFor(missingState.evaluations, "PD-006")).toBe("NO_EVALUATION");
+    expect(statusFor(unrelatedCheckbox.evaluations, "PD-006")).toBe("NO_EVALUATION");
+  });
+
+  it("evaluates PD-011 only for rendered marketing consent controls", async () => {
+    const marketingChecked = await evaluateScenario({
+      db,
+      siteType: "B2B",
+      facts: [
+        extractedFact("rendered_marketing_consent_found", {
+          found: true,
+          formIndex: 0,
+          controlIndex: 2
+        }, "https://example.test/form"),
+        extractedFact("rendered_marketing_consent_checked", {
+          checked: true,
+          formIndex: 0,
+          controlIndex: 2
+        }, "https://example.test/form")
+      ]
+    });
+    const marketingUnchecked = await evaluateScenario({
+      db,
+      siteType: "B2B",
+      facts: [
+        extractedFact("rendered_marketing_consent_found", {
+          found: true,
+          formIndex: 0,
+          controlIndex: 2
+        }, "https://example.test/form"),
+        extractedFact("rendered_marketing_consent_checked", {
+          checked: false,
+          formIndex: 0,
+          controlIndex: 2
+        }, "https://example.test/form")
+      ]
+    });
+    const pdConsentOnly = await evaluateScenario({
+      db,
+      siteType: "B2B",
+      facts: [
+        extractedFact("personal_data_collection_found", { found: true }, "https://example.test/form"),
+        extractedFact("rendered_consent_control_found", {
+          found: true,
+          personalDataConsent: true,
+          formIndex: 0,
+          controlIndex: 1
+        }, "https://example.test/form"),
+        extractedFact("rendered_consent_checked", {
+          checked: true,
+          formIndex: 0,
+          controlIndex: 1
+        }, "https://example.test/form")
+      ]
+    });
+    const noMarketingContext = await evaluateScenario({
+      db,
+      siteType: "B2B",
+      facts: [
+        extractedFact("marketing_subscription_detected", { found: false, scope: "SITE" }, "https://example.test/")
+      ]
+    });
+
+    expect(statusFor(marketingChecked.evaluations, "PD-011")).toBe("FAIL");
+    expect(statusFor(marketingUnchecked.evaluations, "PD-011")).toBe("PASS");
+    expect(statusFor(pdConsentOnly.evaluations, "PD-011")).toBe("NO_EVALUATION");
+    expect(statusFor(noMarketingContext.evaluations, "PD-011")).toBe("NO_EVALUATION");
+  });
+
   it("does not create ECOMMERCE Findings for B2B site type", async () => {
     const result = await evaluateScenario({
       db,
@@ -392,6 +535,107 @@ describe("Wave 1 runtime rule engine", () => {
     });
 
     expect(statusFor(result.evaluations, "EC-001")).toBe("NO_EVALUATION");
+  });
+
+  it("evaluates EC-011 only for paid add-ons in ecommerce checkout context", async () => {
+    const preselectedPaidAddon = await evaluateScenario({
+      db,
+      siteType: "ECOMMERCE",
+      facts: [
+        extractedFact("paid_addon_control_found", {
+          found: true,
+          formIndex: 0,
+          controlIndex: 3
+        }, "https://example.test/checkout"),
+        extractedFact("paid_addon_preselected", {
+          preselected: true,
+          formIndex: 0,
+          controlIndex: 3
+        }, "https://example.test/checkout")
+      ]
+    });
+    const unselectedPaidAddon = await evaluateScenario({
+      db,
+      siteType: "ECOMMERCE",
+      facts: [
+        extractedFact("paid_addon_control_found", {
+          found: true,
+          formIndex: 0,
+          controlIndex: 3
+        }, "https://example.test/checkout"),
+        extractedFact("paid_addon_preselected", {
+          preselected: false,
+          formIndex: 0,
+          controlIndex: 3
+        }, "https://example.test/checkout")
+      ]
+    });
+    const missingPreselectedState = await evaluateScenario({
+      db,
+      siteType: "ECOMMERCE",
+      facts: [
+        extractedFact("paid_addon_control_found", {
+          found: true,
+          formIndex: 0,
+          controlIndex: 3
+        }, "https://example.test/checkout")
+      ]
+    });
+    const freePreselectedOption = await evaluateScenario({
+      db,
+      siteType: "ECOMMERCE",
+      facts: [
+        extractedFact("rendered_consent_control_found", {
+          found: true,
+          formIndex: 0,
+          controlIndex: 4
+        }, "https://example.test/checkout"),
+        extractedFact("rendered_consent_checked", {
+          checked: true,
+          formIndex: 0,
+          controlIndex: 4
+        }, "https://example.test/checkout")
+      ]
+    });
+    const checkedControlWithoutAddonSemantics = await evaluateScenario({
+      db,
+      siteType: "ECOMMERCE",
+      facts: [
+        extractedFact("rendered_marketing_consent_found", {
+          found: true,
+          formIndex: 0,
+          controlIndex: 5
+        }, "https://example.test/checkout"),
+        extractedFact("rendered_marketing_consent_checked", {
+          checked: true,
+          formIndex: 0,
+          controlIndex: 5
+        }, "https://example.test/checkout")
+      ]
+    });
+    const nonEcommerce = await evaluateScenario({
+      db,
+      siteType: "B2B",
+      facts: [
+        extractedFact("paid_addon_control_found", {
+          found: true,
+          formIndex: 0,
+          controlIndex: 3
+        }, "https://example.test/checkout"),
+        extractedFact("paid_addon_preselected", {
+          preselected: true,
+          formIndex: 0,
+          controlIndex: 3
+        }, "https://example.test/checkout")
+      ]
+    });
+
+    expect(statusFor(preselectedPaidAddon.evaluations, "EC-011")).toBe("FAIL");
+    expect(statusFor(unselectedPaidAddon.evaluations, "EC-011")).toBe("PASS");
+    expect(statusFor(missingPreselectedState.evaluations, "EC-011")).toBe("NO_EVALUATION");
+    expect(statusFor(freePreselectedOption.evaluations, "EC-011")).toBe("NO_EVALUATION");
+    expect(statusFor(checkedControlWithoutAddonSemantics.evaluations, "EC-011")).toBe("NO_EVALUATION");
+    expect(statusFor(nonEcommerce.evaluations, "EC-011")).toBe("NO_EVALUATION");
   });
 
   it("does not trigger absence-based EC-001 when crawl coverage is capped or blocked", async () => {

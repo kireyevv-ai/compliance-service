@@ -83,6 +83,10 @@ function evaluateBuiltin(ruleId: string, index: FactIndex): BuiltinEvaluation {
       });
     case "PD-003":
       return evaluatePd003(index);
+    case "PD-006":
+      return evaluatePd006(index);
+    case "PD-011":
+      return evaluatePd011(index);
     case "EC-001":
       return evaluateEc001(index);
     case "EC-002":
@@ -125,6 +129,8 @@ function evaluateBuiltin(ruleId: string, index: FactIndex): BuiltinEvaluation {
         fail: "У продавца-ИП не обнаружены ни e-mail, ни телефон.",
         pass: "У продавца-ИП обнаружен e-mail или телефон."
       });
+    case "EC-011":
+      return evaluateEc011(index);
     case "EC-013":
       return evaluateEc013(index);
     case "CON-001":
@@ -205,6 +211,84 @@ function evaluatePd003(index: FactIndex): BuiltinEvaluation {
     };
   }
   return noBuiltin("Policy access from collection pages was not observed");
+}
+
+function evaluatePd006(index: FactIndex): BuiltinEvaluation {
+  const pdCollection = boolFact(index, "personal_data_collection_found");
+  if (!pdCollection) {
+    return noBuiltin("Personal-data collection page was not detected");
+  }
+
+  const controls = index.facts.filter(
+    (fact) => fact.factType === "rendered_consent_control_found" && fact.value.personalDataConsent === true
+  );
+  if (controls.length === 0) {
+    return noBuiltin("Rendered personal-data consent control was not observed");
+  }
+
+  const checkedByControl = checkedFactsByControl(index, "rendered_consent_checked");
+  const matched = controls.map((control) => ({ control, checked: checkedByControl.get(controlKey(control)) }));
+  if (matched.some((item) => !item.checked)) {
+    return noBuiltin("Rendered personal-data consent checked state was not fully observed");
+  }
+
+  const checked = matched.find((item) => item.checked?.value.checked === true);
+  if (checked) {
+    return {
+      status: "FAIL",
+      evidenceFactTypes: [],
+      evidenceIds: collectEvidenceIdsForFacts(index, [
+        ...controls,
+        ...matched.map((item) => item.checked).filter((fact): fact is Fact => Boolean(fact)),
+        ...factsByType(index, "personal_data_collection_found")
+      ]),
+      explanation: "На форме сбора персональных данных согласие на обработку персональных данных заранее отмечено."
+    };
+  }
+
+  return {
+    status: "PASS",
+    evidenceIds: collectEvidenceIdsForFacts(index, [
+      ...controls,
+      ...matched.map((item) => item.checked).filter((fact): fact is Fact => Boolean(fact))
+    ]),
+    explanation: "На форме сбора персональных данных согласие на обработку персональных данных не отмечено заранее."
+  };
+}
+
+function evaluatePd011(index: FactIndex): BuiltinEvaluation {
+  const controls = factsByType(index, "rendered_marketing_consent_found");
+  if (controls.length === 0) {
+    return noBuiltin("Rendered marketing consent control was not observed");
+  }
+
+  const checkedByControl = checkedFactsByControl(index, "rendered_marketing_consent_checked");
+  const matched = controls.map((control) => ({ control, checked: checkedByControl.get(controlKey(control)) }));
+  if (matched.some((item) => !item.checked)) {
+    return noBuiltin("Rendered marketing consent checked state was not fully observed");
+  }
+
+  const checked = matched.find((item) => item.checked?.value.checked === true);
+  if (checked) {
+    return {
+      status: "FAIL",
+      evidenceFactTypes: [],
+      evidenceIds: collectEvidenceIdsForFacts(index, [
+        ...controls,
+        ...matched.map((item) => item.checked).filter((fact): fact is Fact => Boolean(fact))
+      ]),
+      explanation: "На сайте найдено согласие на рекламные или маркетинговые сообщения, заранее отмеченное для пользователя."
+    };
+  }
+
+  return {
+    status: "PASS",
+    evidenceIds: collectEvidenceIdsForFacts(index, [
+      ...controls,
+      ...matched.map((item) => item.checked).filter((fact): fact is Fact => Boolean(fact))
+    ]),
+    explanation: "Согласие на рекламные или маркетинговые сообщения найдено и не отмечено заранее."
+  };
 }
 
 function evaluateEc001(index: FactIndex): BuiltinEvaluation {
@@ -335,6 +419,41 @@ function evaluateEc013(index: FactIndex): BuiltinEvaluation {
   return noBuiltin("Consumer price facts are not sufficient");
 }
 
+function evaluateEc011(index: FactIndex): BuiltinEvaluation {
+  const controls = factsByType(index, "paid_addon_control_found");
+  if (controls.length === 0) {
+    return noBuiltin("Paid add-on control was not observed on a checkout-like page");
+  }
+
+  const preselectedByControl = checkedFactsByControl(index, "paid_addon_preselected");
+  const matched = controls.map((control) => ({ control, preselected: preselectedByControl.get(controlKey(control)) }));
+  if (matched.some((item) => !item.preselected)) {
+    return noBuiltin("Paid add-on preselected state was not fully observed");
+  }
+
+  const preselected = controls.find((control) => preselectedByControl.get(controlKey(control))?.value.preselected === true);
+  if (preselected) {
+    return {
+      status: "FAIL",
+      evidenceFactTypes: [],
+      evidenceIds: collectEvidenceIdsForFacts(index, [
+        ...controls,
+        ...factsByType(index, "paid_addon_preselected")
+      ]),
+      explanation: "В сценарии покупки обнаружена платная дополнительная услуга или товар, заранее выбранные для пользователя."
+    };
+  }
+
+  return {
+    status: "PASS",
+    evidenceIds: collectEvidenceIdsForFacts(index, [
+      ...controls,
+      ...matched.map((item) => item.preselected).filter((fact): fact is Fact => Boolean(fact))
+    ]),
+    explanation: "В сценарии покупки найденная платная дополнительная услуга или товар не выбраны заранее."
+  };
+}
+
 function evaluateCon001(index: FactIndex): BuiltinEvaluation {
   if (sellerKind(index) !== "LEGAL_ENTITY") {
     return noBuiltin("Seller kind is not LEGAL_ENTITY");
@@ -419,6 +538,16 @@ function collectEvidenceIdsForFactTypesOnPages(index: FactIndex, factTypes: stri
   return [...ids];
 }
 
+function collectEvidenceIdsForFacts(index: FactIndex, facts: Fact[]): string[] {
+  const ids = new Set<string>();
+  for (const fact of facts) {
+    for (const evidence of index.evidenceByFactId.get(fact.id) ?? []) {
+      ids.add(evidence.id);
+    }
+  }
+  return [...ids];
+}
+
 function unique<T>(values: T[]): T[] {
   return [...new Set(values)];
 }
@@ -459,6 +588,26 @@ function completeCoverage(index: FactIndex): boolean {
 
 function sellerKind(index: FactIndex): string | undefined {
   return index.facts.find((fact) => fact.factType === "seller_kind")?.value.kind as string | undefined;
+}
+
+function factsByType(index: FactIndex, factType: string): Fact[] {
+  return index.facts.filter((fact) => fact.factType === factType);
+}
+
+function checkedFactsByControl(index: FactIndex, factType: string): Map<string, Fact> {
+  const result = new Map<string, Fact>();
+  for (const fact of factsByType(index, factType)) {
+    result.set(controlKey(fact), fact);
+  }
+  return result;
+}
+
+function controlKey(fact: Fact): string {
+  return [
+    fact.pageUrl ?? "",
+    String(fact.value.formIndex ?? ""),
+    String(fact.value.controlIndex ?? "")
+  ].join("::");
 }
 
 function sellerApplicabilityBlockReason(ruleId: string, index: FactIndex): string | undefined {
