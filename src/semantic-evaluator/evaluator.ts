@@ -113,8 +113,17 @@ export async function evaluateSemanticRule(
 
 export function mapObservationToStatus(
   observation: SemanticEvaluation["observation"],
-  input: Pick<SemanticEvaluationInput, "evidence">
+  input: Pick<SemanticEvaluationInput, "evidence" | "ruleId">
 ): SemanticEvaluation["status"] {
+  if (input.ruleId === "PD-024") {
+    if (observation === "PRESENT" || observation === "AMBIGUOUS") {
+      return "MANUAL_CHECK";
+    }
+    return input.evidence.length > 0 && input.evidence.every((item) => item.completeness === "COMPLETE")
+      ? "PASS"
+      : "MANUAL_CHECK";
+  }
+
   if (observation === "PRESENT") {
     return hasOnlyReferenceOnlyEvidence(input.evidence) ? "MANUAL_CHECK" : "PASS";
   }

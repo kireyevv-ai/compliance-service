@@ -22,7 +22,12 @@ const pilotRuleIds = [
   "PD-016",
   "PD-017",
   "PD-018",
-  "PD-019"
+  "PD-019",
+  "PD-024",
+  "EC-010",
+  "EC-012",
+  "REC-003",
+  "LANG-001"
 ] as const;
 
 const scan: Scan = {
@@ -68,6 +73,14 @@ function semanticFixture(ruleId: (typeof pilotRuleIds)[number], marker: "GOLDEN_
   const factType =
     ruleId === "PD-010"
       ? "marketing_consent_control_found"
+      : ruleId === "PD-024"
+        ? "form_fields"
+      : ruleId === "EC-010" || ruleId === "LANG-001"
+        ? "consumer_page_text"
+      : ruleId === "EC-012"
+        ? "paid_addon_control_found"
+      : ruleId === "REC-003"
+        ? "recommendation_rules_text"
         : ruleId === "PD-017"
           ? "form_fields"
         : ruleId === "PD-018"
@@ -80,6 +93,16 @@ function semanticFixture(ruleId: (typeof pilotRuleIds)[number], marker: "GOLDEN_
       ? `${marker}: согласие на обработку персональных данных рядом с формой.`
       : ruleId === "PD-010"
         ? `${marker}: согласие на рекламную рассылку рядом с формой.`
+        : ruleId === "PD-024"
+          ? `${marker}: форма содержит поле диагноз пациента.`
+        : ruleId === "EC-010"
+          ? `${marker}: порядок подачи претензий и жалоб покупателя.`
+        : ruleId === "EC-012"
+          ? `${marker}: платная дополнительная услуга в корзине.`
+        : ruleId === "REC-003"
+          ? `${marker}: правила рекомендательных технологий опубликованы на русском языке.`
+        : ruleId === "LANG-001"
+          ? `${marker}: потребительская информация на русском языке.`
         : ruleId === "PD-017"
           ? `${marker}: форма собирает имя и телефон; политика описывает имя и телефон.`
           : ruleId === "PD-018"
@@ -192,6 +215,13 @@ function ruleOnly(ruleId: string) {
   return loadPilotSemanticRuntimeRules().filter((rule) => rule.ruleId === ruleId);
 }
 
+function scanForRule(ruleId: string): Scan {
+  if (ruleId.startsWith("EC-") || ruleId.startsWith("LANG-")) {
+    return { ...scan, siteType: "ECOMMERCE" };
+  }
+  return scan;
+}
+
 describe("pilot semantic rules shadow mode", () => {
   it.each(pilotRuleIds)("loads %s as an LLM_SEMANTIC runtime rule", (ruleId) => {
     const [rule] = ruleOnly(ruleId);
@@ -208,16 +238,19 @@ describe("pilot semantic rules shadow mode", () => {
 
   it.each(
     pilotRuleIds.flatMap((ruleId) => [
-      [ruleId, "GOLDEN_PASS", "PASS"],
+      [ruleId, "GOLDEN_PASS", ruleId === "PD-024" ? "MANUAL_CHECK" : "PASS"],
       [ruleId, "GOLDEN_FAIL", "MANUAL_CHECK"],
       [ruleId, "GOLDEN_MANUAL", "MANUAL_CHECK"]
     ] as const)
   )("%s returns %s for %s golden evidence", async (ruleId, marker, expectedStatus) => {
     const { fact, evidence } = semanticFixture(ruleId, marker);
+    const facts = ruleId === "REC-003"
+      ? [factForDeterministic("recommendation_technology_confirmed", { found: true }), fact]
+      : [fact];
 
     const [result] = await evaluateSemanticRulesShadow({
-      scan,
-      facts: [fact],
+      scan: scanForRule(ruleId),
+      facts,
       evidence: [evidence],
       rules: ruleOnly(ruleId),
       provider: goldenProvider()
@@ -524,6 +557,45 @@ describe("pilot semantic rules shadow mode", () => {
 
     expect(result.status).toBe("PASS");
     expect(provider.requests).toHaveLength(1);
+  });
+
+  it("keeps PD-024 special-category signal as MANUAL_CHECK rather than FAIL", async () => {
+    const provider = goldenProvider();
+    const form = structuredFixture("pd024-special-field", "form_fields", {
+      formIndex: 0,
+      fields: [
+        { type: "text", name: "diagnosis", label: "Диагноз", personalDataCategories: [] },
+        { type: "hidden", name: "csrf", personalDataCategories: [] }
+      ]
+    });
+
+    const [result] = await evaluateSemanticRulesShadow({
+      scan,
+      facts: [form.fact],
+      evidence: [form.evidence],
+      rules: ruleOnly("PD-024"),
+      provider
+    });
+
+    expect(result.status).toBe("MANUAL_CHECK");
+    expect(provider.requests[0].evidence[0].excerpt).toContain("Диагноз");
+    expect(provider.requests[0].evidence[0].excerpt).not.toContain("csrf");
+  });
+
+  it("does not evaluate REC-003 until recommendation technology use is confirmed", async () => {
+    const provider = goldenProvider();
+    const { fact, evidence } = semanticFixture("REC-003", "GOLDEN_PASS");
+
+    const [result] = await evaluateSemanticRulesShadow({
+      scan,
+      facts: [fact],
+      evidence: [evidence],
+      rules: ruleOnly("REC-003"),
+      provider
+    });
+
+    expect(result.status).toBe("NO_EVALUATION");
+    expect(provider.requests).toHaveLength(0);
   });
 
   it("keeps deterministic evaluation separate from semantic shadow mode", async () => {

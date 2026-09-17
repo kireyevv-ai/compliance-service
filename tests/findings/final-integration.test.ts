@@ -108,7 +108,12 @@ function ruleSpecificSemanticProvider() {
     "PD-016": "ПОРЯДОК_ОБРАЩЕНИЙ",
     "PD-017": "Категории формы",
     "PD-018": "Внешний сервис",
-    "PD-019": "Не передаём третьим лицам"
+    "PD-019": "Не передаём третьим лицам",
+    "PD-024": "Специальные данные",
+    "EC-010": "Порядок претензий",
+    "EC-012": "Платная услуга",
+    "REC-003": "Правила рекомендаций",
+    "LANG-001": "Русский язык"
   };
   return new FakeSemanticModelProvider((request: SemanticModelRequest) => {
     const marker = markers[request.ruleId];
@@ -116,10 +121,11 @@ function ruleSpecificSemanticProvider() {
       .filter((item) => !marker || item.excerpt.includes(marker))
       .map((item) => item.ref);
 
+    const observation = request.ruleId === "PD-024" ? "PRESENT" : "ABSENT";
     return {
-      observation: "ABSENT",
+      observation,
       confidence: 0.88,
-      reason_code: "ABSENT_TEST",
+      reason_code: `${observation}_TEST`,
       reason: "Synthetic semantic result.",
       evidence_refs: refs
     };
@@ -410,7 +416,7 @@ describe("final production finding integration", () => {
 
   it("binds each semantic pilot rule to its own evidence description and source", async () => {
     const db = createTestDb();
-    const scan = await createScan(db);
+    const scan = await createScan(db, "ECOMMERCE");
     await factWithEvidence(
       db,
       scan.id,
@@ -514,6 +520,21 @@ describe("final production finding integration", () => {
     await factWithEvidence(
       db,
       scan.id,
+      "form_fields",
+      {
+        formIndex: 1,
+        semanticCompleteness: "COMPLETE",
+        fields: [
+          { label: "Специальные данные: диагноз", name: "diagnosis", personalDataCategories: [] },
+          { label: "Имя", name: "name", personalDataCategories: ["name"] }
+        ]
+      },
+      "Специальные данные: форма содержит поле диагноз.",
+      "https://example.test/medical-form"
+    );
+    await factWithEvidence(
+      db,
+      scan.id,
       "external_service_matches",
       {
         service_name: "Внешний сервис аналитики",
@@ -525,6 +546,61 @@ describe("final production finding integration", () => {
       },
       "Внешний сервис; Не передаём третьим лицам: найден сервис аналитики.",
       "https://example.test/"
+    );
+    await factWithEvidence(
+      db,
+      scan.id,
+      "consumer_page_text",
+      {
+        text: "Порядок претензий: на странице нет порядка подачи претензий.",
+        semanticCompleteness: "COMPLETE"
+      },
+      "Порядок претензий: на странице нет порядка подачи претензий.",
+      "https://example.test/offer#claims"
+    );
+    await factWithEvidence(
+      db,
+      scan.id,
+      "paid_addon_control_found",
+      {
+        found: true,
+        text: "Платная услуга: платная настройка обязательна для оформления заказа.",
+        semanticCompleteness: "COMPLETE"
+      },
+      "Платная услуга: платная настройка обязательна для оформления заказа.",
+      "https://example.test/checkout#addon"
+    );
+    await factWithEvidence(
+      db,
+      scan.id,
+      "recommendation_technology_confirmed",
+      {
+        found: true
+      },
+      "На сайте используются рекомендательные технологии.",
+      "https://example.test/"
+    );
+    await factWithEvidence(
+      db,
+      scan.id,
+      "recommendation_rules_text",
+      {
+        text: "Правила рекомендаций: страница доступна только после входа.",
+        semanticCompleteness: "COMPLETE"
+      },
+      "Правила рекомендаций: страница доступна только после входа.",
+      "https://example.test/recommendations#rules"
+    );
+    await factWithEvidence(
+      db,
+      scan.id,
+      "consumer_page_text",
+      {
+        text: "Русский язык: Return policy is available in English only.",
+        semanticCompleteness: "COMPLETE"
+      },
+      "Русский язык: Return policy is available in English only.",
+      "https://example.test/return#language"
     );
     await factWithEvidence(
       db,
@@ -698,6 +774,11 @@ describe("final production finding integration", () => {
     const pd017 = views.find((finding) => finding.ruleId === "PD-017")!;
     const pd018 = views.find((finding) => finding.ruleId === "PD-018")!;
     const pd019 = views.find((finding) => finding.ruleId === "PD-019")!;
+    const pd024 = views.find((finding) => finding.ruleId === "PD-024")!;
+    const ec010 = views.find((finding) => finding.ruleId === "EC-010")!;
+    const ec012 = views.find((finding) => finding.ruleId === "EC-012")!;
+    const rec003 = views.find((finding) => finding.ruleId === "REC-003")!;
+    const lang001 = views.find((finding) => finding.ruleId === "LANG-001")!;
 
     expect(pd005.evidence[0]).toMatchObject({
       pageUrl: "https://example.test/consent#separate",
@@ -740,14 +821,40 @@ describe("final production finding integration", () => {
     expect(pd019.evidence.map((item) => item.pageUrl)).toEqual(
       expect.arrayContaining(["https://example.test/", "https://example.test/privacy#no-transfer"])
     );
+    expect(pd024.status).toBe("MANUAL_CHECK");
+    expect(pd024.evidence[0]).toMatchObject({
+      pageUrl: "https://example.test/medical-form",
+      detail: expect.stringContaining("форма содержит поле диагноз")
+    });
+    expect(ec010.evidence[0]).toMatchObject({
+      pageUrl: "https://example.test/offer#claims",
+      detail: expect.stringContaining("на странице нет порядка подачи претензий")
+    });
+    expect(ec012.evidence[0]).toMatchObject({
+      pageUrl: "https://example.test/checkout#addon",
+      detail: expect.stringContaining("платная настройка обязательна")
+    });
+    expect(rec003.evidence[0]).toMatchObject({
+      pageUrl: "https://example.test/recommendations#rules",
+      detail: expect.stringContaining("страница доступна только после входа")
+    });
+    expect(lang001.evidence[0]).toMatchObject({
+      pageUrl: "https://example.test/return#language",
+      detail: expect.stringContaining("Return policy is available in English only")
+    });
 
-    const pilotViews = [pd005, pd008, pd009, pd010, pd013, pd014, pd015, pd016, pd017, pd018, pd019];
+    const pilotViews = [pd005, pd008, pd009, pd010, pd013, pd014, pd015, pd016, pd017, pd018, pd019, pd024, ec010, ec012, rec003, lang001];
     const rendered = JSON.stringify(pilotViews.map((finding) => finding.evidence));
     expect(rendered).not.toContain("ТЕКСТ_СОГЛАСИЯ");
     expect(rendered).not.toContain("ЦЕЛИ_ОБРАБОТКИ");
     expect(rendered).not.toContain("КАТЕГОРИИ_ДАННЫХ");
     expect(rendered).not.toContain("СРОКИ_ХРАНЕНИЯ");
     expect(rendered).not.toContain("ПОРЯДОК_ОБРАЩЕНИЙ");
+    expect(rendered).not.toContain("Специальные данные:");
+    expect(rendered).not.toContain("Порядок претензий:");
+    expect(rendered).not.toContain("Платная услуга:");
+    expect(rendered).not.toContain("Правила рекомендаций:");
+    expect(rendered).not.toContain("Русский язык:");
     expect(pd008.evidence[0].detail).not.toContain("https://example.test/consent#purpose");
     expect(pd008.evidence[0].detail).not.toContain("согласие объединено с офертой");
     expect(pd008.evidence[0].detail).not.toContain("неограниченный объём обработки");

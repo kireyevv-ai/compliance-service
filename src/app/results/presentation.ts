@@ -374,7 +374,7 @@ function cleanEvidenceText(value: string | undefined, sourceUrl?: string): strin
     return undefined;
   }
   const withoutInternalLabel = value.replace(
-    /^(ТЕКСТ_СОГЛАСИЯ|ЦЕЛИ_ОБРАБОТКИ|КАТЕГОРИИ_ДАННЫХ|СРОКИ_ХРАНЕНИЯ|ПОРЯДОК_ОБРАЩЕНИЙ)\s*:\s*/u,
+    /^(ТЕКСТ_СОГЛАСИЯ|ЦЕЛИ_ОБРАБОТКИ|КАТЕГОРИИ_ДАННЫХ|СРОКИ_ХРАНЕНИЯ|ПОРЯДОК_ОБРАЩЕНИЙ|Специальные данные|Порядок претензий|Платная услуга|Правила рекомендаций|Русский язык)\s*:\s*/u,
     ""
   );
   if (!sourceUrl || !isHttpUrl(sourceUrl)) {

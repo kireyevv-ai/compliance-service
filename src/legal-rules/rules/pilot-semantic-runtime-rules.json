@@ -298,5 +298,143 @@
     "limitations": ["Not applicable when the policy has no explicit no-transfer/no-third-party claim."],
     "effective_from": "2026-09-17",
     "last_verified_at": "2026-09-17"
+  },
+  {
+    "rule_id": "PD-024",
+    "version": "0.2-shadow",
+    "title": "Site forms may collect special categories of personal data",
+    "pass_summary": "Checked forms do not show signs of special-category personal data collection.",
+    "module": "PERSONAL_DATA",
+    "evaluator_type": "LLM_SEMANTIC",
+    "legal_strength": "MANDATORY",
+    "status_if_triggered": "MANUAL_CHECK",
+    "applies_to": ["B2B", "B2C_SERVICE", "ECOMMERCE", "OTHER"],
+    "required_facts": ["form_fields"],
+    "evidence_requirements": ["form_fields"],
+    "legal_basis": [],
+    "severity": "HIGH",
+    "evaluation": {
+      "kind": "SEMANTIC_CRITERION",
+      "criterion": "Determine whether the supplied form-field evidence shows that a site form asks the user to provide special-category-like personal data, such as health status, diagnosis, disability, medical services, nationality, racial or ethnic origin, political views, religious or philosophical beliefs, intimate life, or biometric data. Treat the required element as PRESENT only when the field label, placeholder, name, or nearby form context indicates collection of such data from the user. Treat ordinary contact/order fields as ABSENT. Do not treat a general article, product category, service name, or page topic as PRESENT unless the form itself asks for that information. Use AMBIGUOUS when the field context is unclear.",
+      "evidence_fact_types": ["form_fields"]
+    },
+    "remediation": "Keep remediation in application logic; this shadow rule does not create user-facing findings.",
+    "confidence_policy": {
+      "fixed_confidence": 0.8
+    },
+    "limitations": ["Semantic suspicion only. PRESENT maps to MANUAL_CHECK, not FAIL."],
+    "effective_from": "2026-09-17",
+    "last_verified_at": "2026-09-17"
+  },
+  {
+    "rule_id": "EC-010",
+    "version": "0.2-shadow",
+    "title": "Consumer pages describe how to submit claims or complaints",
+    "pass_summary": "Consumer-facing pages describe how to submit claims or complaints.",
+    "module": "E_COMMERCE",
+    "evaluator_type": "LLM_SEMANTIC",
+    "legal_strength": "MANDATORY",
+    "status_if_triggered": "FAIL",
+    "applies_to": ["ECOMMERCE"],
+    "required_facts": ["consumer_page_text"],
+    "evidence_requirements": ["consumer_page_text"],
+    "legal_basis": [],
+    "severity": "MEDIUM",
+    "evaluation": {
+      "kind": "SEMANTIC_CRITERION",
+      "criterion": "Determine whether the supplied consumer-facing page text describes how a consumer can submit a claim, complaint, request, or appeal to the seller or service provider. Treat the required element as PRESENT when the evidence gives an understandable procedure, channel, address, email, form, or instruction specifically connected with complaints, claims, returns, appeals, or consumer requests. General contact details alone are not enough unless the text connects them to claims or complaints. Treat it as ABSENT when complete relevant consumer text contains no such procedure. Use AMBIGUOUS when the supplied fragment is incomplete or unclear.",
+      "evidence_fact_types": ["consumer_page_text"]
+    },
+    "remediation": "Keep remediation in application logic; this shadow rule does not create user-facing findings.",
+    "confidence_policy": {
+      "fixed_confidence": 0.8
+    },
+    "limitations": ["Uses only existing consumer-page text evidence."],
+    "effective_from": "2026-09-17",
+    "last_verified_at": "2026-09-17"
+  },
+  {
+    "rule_id": "EC-012",
+    "version": "0.2-shadow",
+    "title": "Paid add-ons are not mandatory for the main purchase",
+    "pass_summary": "Paid add-ons appear optional for the main purchase.",
+    "module": "E_COMMERCE",
+    "evaluator_type": "LLM_SEMANTIC",
+    "legal_strength": "MANDATORY",
+    "status_if_triggered": "FAIL",
+    "applies_to": ["ECOMMERCE"],
+    "required_facts": ["paid_addon_control_found"],
+    "evidence_requirements": ["paid_addon_control_found"],
+    "legal_basis": [],
+    "severity": "HIGH",
+    "evaluation": {
+      "kind": "SEMANTIC_CRITERION",
+      "criterion": "Determine whether the supplied checkout or paid add-on evidence shows that the paid add-on is optional and the main purchase is not conditioned on buying it. Treat the required element as PRESENT when the user can decline, remove, or deselect the paid add-on without losing the main product or order flow. Treat it as ABSENT only when the evidence explicitly shows that the paid add-on is mandatory, cannot be removed, or is required to continue with the main purchase. A preselected but removable paid add-on is PRESENT for this semantic rule; preselection itself is covered by a separate deterministic rule. Use AMBIGUOUS when the evidence shows a paid add-on but does not prove whether it is optional or mandatory.",
+      "evidence_fact_types": ["paid_addon_control_found"]
+    },
+    "remediation": "Keep remediation in application logic; this shadow rule does not create user-facing findings.",
+    "confidence_policy": {
+      "fixed_confidence": 0.8
+    },
+    "limitations": ["Does not evaluate preselection; EC-011 covers that separately."],
+    "effective_from": "2026-09-17",
+    "last_verified_at": "2026-09-17"
+  },
+  {
+    "rule_id": "REC-003",
+    "version": "0.2-shadow",
+    "title": "Recommendation technology rules are accessible in Russian",
+    "pass_summary": "Rules for recommendation technologies are accessible in Russian.",
+    "module": "RECOMMENDER_TECHNOLOGIES",
+    "evaluator_type": "LLM_SEMANTIC",
+    "legal_strength": "MANDATORY",
+    "status_if_triggered": "FAIL",
+    "applies_to": ["B2B", "B2C_SERVICE", "ECOMMERCE", "OTHER"],
+    "required_facts": ["recommendation_technology_confirmed", "recommendation_rules_text"],
+    "evidence_requirements": ["recommendation_rules_text"],
+    "legal_basis": [],
+    "severity": "MEDIUM",
+    "evaluation": {
+      "kind": "SEMANTIC_CRITERION",
+      "criterion": "Determine whether the supplied rules document for recommendation technologies is publicly accessible and written in Russian or has a Russian equivalent. Treat the required element as PRESENT when the evidence contains understandable Russian rules or an unrestricted Russian-language version. Treat it as ABSENT when the rules are foreign-language only, access-restricted, or explicitly unavailable. Use AMBIGUOUS when the supplied evidence is incomplete or does not reliably show access and language.",
+      "evidence_fact_types": ["recommendation_rules_text"],
+      "context": {
+        "requires_fact_true": "recommendation_technology_confirmed"
+      }
+    },
+    "remediation": "Keep remediation in application logic; this shadow rule does not create user-facing findings.",
+    "confidence_policy": {
+      "fixed_confidence": 0.8
+    },
+    "limitations": ["Not evaluated until recommendation technology use is confirmed by existing evidence."],
+    "effective_from": "2026-09-17",
+    "last_verified_at": "2026-09-17"
+  },
+  {
+    "rule_id": "LANG-001",
+    "version": "0.2-shadow",
+    "title": "Mandatory consumer information is available in Russian",
+    "pass_summary": "Mandatory consumer information is available in Russian or is not shown as foreign-only.",
+    "module": "LANGUAGE",
+    "evaluator_type": "LLM_SEMANTIC",
+    "legal_strength": "MANDATORY",
+    "status_if_triggered": "FAIL",
+    "applies_to": ["B2C_SERVICE", "ECOMMERCE"],
+    "required_facts": ["consumer_page_text"],
+    "evidence_requirements": ["consumer_page_text"],
+    "legal_basis": [],
+    "severity": "MEDIUM",
+    "evaluation": {
+      "kind": "SEMANTIC_CRITERION",
+      "criterion": "Determine whether the supplied consumer-facing text either is not mandatory consumer information, or provides mandatory consumer information in Russian or with a Russian equivalent. Mandatory consumer information includes seller or service-provider information, product or service terms, price/payment/delivery/return/complaint terms, warranty, safety, or other information needed by a consumer before purchase or service use. Treat the required element as PRESENT when the information is in Russian, has a Russian equivalent, or the foreign-language fragment is only a brand name, product name, slogan, interface label, or non-mandatory decorative text. Treat it as ABSENT only when mandatory consumer information is foreign-language only and no Russian equivalent is present. Use AMBIGUOUS when the supplied text is incomplete or it is unclear whether the fragment is mandatory consumer information.",
+      "evidence_fact_types": ["consumer_page_text"]
+    },
+    "remediation": "Keep remediation in application logic; this shadow rule does not create user-facing findings.",
+    "confidence_policy": {
+      "fixed_confidence": 0.8
+    },
+    "limitations": ["Uses current consumer-page text evidence; does not add a new language detector."],
+    "effective_from": "2026-09-17",
+    "last_verified_at": "2026-09-17"
   }
 ]

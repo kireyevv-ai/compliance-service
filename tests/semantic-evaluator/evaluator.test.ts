@@ -107,6 +107,7 @@ describe("generic semantic evaluator", () => {
   it("does not let reference-only text count as PRESENT", () => {
     expect(
       mapObservationToStatus("PRESENT", {
+        ruleId: input.ruleId,
         evidence: [
           {
             ...input.evidence[0],

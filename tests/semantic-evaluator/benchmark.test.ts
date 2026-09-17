@@ -18,7 +18,7 @@ function semanticResponse(observation: SemanticObservation, request: SemanticMod
 
 describe("pilot semantic benchmark", () => {
   it("contains at least 8 synthetic cases per pilot rule", () => {
-    expect(PILOT_BENCHMARK_CASES).toHaveLength(88);
+    expect(PILOT_BENCHMARK_CASES).toHaveLength(128);
     for (const ruleId of [
       "PD-005",
       "PD-008",
@@ -30,12 +30,17 @@ describe("pilot semantic benchmark", () => {
       "PD-016",
       "PD-017",
       "PD-018",
-      "PD-019"
+      "PD-019",
+      "PD-024",
+      "EC-010",
+      "EC-012",
+      "REC-003",
+      "LANG-001"
     ]) {
       const cases = PILOT_BENCHMARK_CASES.filter((item) => item.ruleId === ruleId);
       expect(cases).toHaveLength(8);
-      expect(cases.filter((item) => item.expected === "PASS").length).toBeGreaterThanOrEqual(3);
-      expect(cases.filter((item) => item.expected === "FAIL")).toHaveLength(3);
+      expect(cases.filter((item) => item.expected === "PASS").length).toBeGreaterThanOrEqual(ruleId === "PD-024" ? 2 : 3);
+      expect(cases.filter((item) => item.expected === "FAIL")).toHaveLength(ruleId === "PD-024" ? 0 : 3);
       expect(cases.filter((item) => item.expected === "MANUAL_CHECK").length).toBeGreaterThanOrEqual(1);
       expect(cases.every((item) => ["PRESENT", "ABSENT", "AMBIGUOUS"].includes(item.expectedObservation))).toBe(true);
     }

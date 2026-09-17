@@ -68,6 +68,11 @@ export async function evaluateSemanticRulesShadow(
     }
     const evaluation = rule.evaluation;
 
+    if (typeof evaluation.context?.requires_fact_true === "string" && !hasTruthyFact(input.facts, evaluation.context.requires_fact_true)) {
+      results.push(noShadowEvaluation(rule, `Rule requires fact ${evaluation.context.requires_fact_true}=true.`));
+      continue;
+    }
+
     const evidencePackage = buildEvidencePackage(input.facts, input.evidence, evaluation.evidence_fact_types);
     if (evidencePackage.length === 0) {
       results.push(noShadowEvaluation(rule, "Required semantic evidence is missing."));
@@ -214,24 +219,38 @@ function structuredEvidenceText(fact: Fact, evidence: Evidence): string | undefi
 
 function formFieldsEvidenceText(fact: Fact): string | undefined {
   const fields = Array.isArray(fact.value.fields) ? fact.value.fields : [];
-  const pdFields = fields
+  const relevantFields = fields
     .map((field) => (field && typeof field === "object" ? (field as Record<string, unknown>) : undefined))
-    .filter((field): field is Record<string, unknown> => Array.isArray(field?.personalDataCategories) && field.personalDataCategories.length > 0);
-  if (pdFields.length === 0) {
+    .filter((field): field is Record<string, unknown> => field !== undefined)
+    .filter((field) => !isTechnicalFormField(field));
+  if (relevantFields.length === 0) {
     return undefined;
   }
 
-  const fieldText = pdFields
+  const fieldText = relevantFields
     .map((field) => {
-      const categories = (field.personalDataCategories as unknown[]).filter((item): item is string => typeof item === "string").join(", ");
+      const categories = Array.isArray(field.personalDataCategories)
+        ? field.personalDataCategories.filter((item): item is string => typeof item === "string").join(", ")
+        : "";
       const descriptors = [field.label, field.placeholder, field.name, field.id, field.autocomplete, field.type]
         .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
         .join(" / ");
-      return `${categories}${descriptors ? ` (${descriptors})` : ""}`;
+      return `${categories || "unclassified"}${descriptors ? ` (${descriptors})` : ""}`;
     })
     .join("; ");
 
-  return `Form fields with personal data on ${sanitizeUrlForModel(fact.pageUrl) ?? "the checked page"}: ${fieldText}. Technical fields without personal-data categories are not included.`;
+  return `Form fields visible on ${sanitizeUrlForModel(fact.pageUrl) ?? "the checked page"}: ${fieldText}. Technical hidden, token, captcha, and honeypot fields are not included.`;
+}
+
+function isTechnicalFormField(field: Record<string, unknown>): boolean {
+  const descriptor = [field.type, field.name, field.id, field.label, field.placeholder]
+    .filter((item): item is string => typeof item === "string")
+    .join(" ")
+    .toLowerCase();
+  return (
+    descriptor.includes("hidden") ||
+    /(csrf|token|captcha|honeypot|_method|sess|session)/i.test(descriptor)
+  );
 }
 
 function externalServiceEvidenceText(fact: Fact): string | undefined {
@@ -268,6 +287,10 @@ function hasNoThirdPartyTransferClaim(evidence: SemanticEvidenceExcerpt[]): bool
       /не\s+(?:предоставляем|раскрываем)\s+персональные\s+данные\s+(?:третьим\s+лицам|третьим\s+сторонам)/
     ].some((pattern) => pattern.test(text));
   });
+}
+
+function hasTruthyFact(facts: Fact[], factType: string): boolean {
+  return facts.some((fact) => fact.factType === factType && fact.value.found === true);
 }
 
 function evidenceCompleteness(evidence: Evidence, fact: Fact): SemanticEvidenceCompleteness {

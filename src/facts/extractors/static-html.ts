@@ -51,6 +51,10 @@ const GENERAL_OFFER_RE =
 const SIMPLE_OFFER_URL_RE = /(?:^|\/)(?:offer|oferta|public-offer)(?:[./?#]|$)/i;
 const SPECIALIZED_OFFER_RE =
   /(подарочн.*сертификат|электронн.*сертификат|подарочн.*карт|бонусн.*программ|программ.*лояльност|акци[яи]|промо|спецпредлож|сертификат|gift[-_\s]?(card|certificate)|bonus|loyalty|promo|promotion)/i;
+const CONSUMER_TEXT_RE =
+  /(претенз|жалоб|обращени|возврат|refund|return|claim|complaint|доставк|delivery|оплат|payment|услови|оферт|контакт|seller|продавец|исполнитель)/i;
+const RECOMMENDATION_RULES_RE =
+  /(правил.*рекомендательн|рекомендательн.*технолог|recommendation.*rules|recommender.*rules|recommendation.*technology)/i;
 const DOCUMENT_EXT_RE = /\.(pdf|doc|docx)(?:[?#].*)?$/i;
 const RUB_PRICE_RE = /((?:\d{1,3}(?:[\s\u00a0]\d{3})+|\d+)(?:[,.]\d{1,2})?)\s*(₽|руб\.?|рублей|RUB)(?=$|[\s.,;:!?<])/giu;
 const FOREIGN_PRICE_RE = /((?:\d{1,3}(?:[\s\u00a0]\d{3})+|\d+)(?:[,.]\d{1,2})?)\s*(\$|€|USD|EUR)(?=$|[\s.,;:!?<])/giu;
@@ -94,6 +98,7 @@ export function extractStaticFacts(
     const links = extractLinks($, page.url);
     const pagePrivacyLinks = links.filter((link) => PRIVACY_RE.test(linkSignal(link)));
     const pageOfferLinks = links.filter(isGeneralOfferLink);
+    const pageRecommendationRulesLinks = links.filter((link) => RECOMMENDATION_RULES_RE.test(linkSignal(link)));
     const pageDocumentLinks = links.filter((link) => DOCUMENT_EXT_RE.test(link.url));
 
     privacyLinks.push(...pagePrivacyLinks);
@@ -110,6 +115,9 @@ export function extractStaticFacts(
       facts.push(linkFact("offer_link_found", page.url, link, { found: true }));
       facts.push(linkFact("offer_url", undefined, link, { url: link.url }));
     }
+    for (const link of pageRecommendationRulesLinks) {
+      facts.push(linkFact("recommendation_rules_document_link", page.url, link, { found: true, url: link.url }));
+    }
     if (pageDocumentLinks.length > 0) {
       facts.push({
         pageUrl: page.url,
@@ -120,6 +128,7 @@ export function extractStaticFacts(
     }
 
     extractFormFacts($, page, facts, pageSignals);
+    extractConsumerPageTextFacts($, page, facts, pageRecommendationRulesLinks.map((link) => link.url));
     extractSellerFacts($, page.url, sellerCandidates);
     extractPriceFacts($, page.url, facts, pageSignals);
 
@@ -324,6 +333,55 @@ function extractFormFacts(
       }
     });
   });
+}
+
+function extractConsumerPageTextFacts(
+  $: cheerio.CheerioAPI,
+  page: CrawledPage,
+  facts: ExtractedFact[],
+  recommendationRuleUrls: string[]
+): void {
+  const text = readablePageText($, 12_000);
+  if (!text) {
+    return;
+  }
+
+  const completeness = semanticCompletenessForPage(page);
+  if (CONSUMER_TEXT_RE.test(text) || looksConsumerRelevantUrl(page.url)) {
+    facts.push({
+      pageUrl: page.url,
+      factType: "consumer_page_text",
+      value: { text, sourceUrl: page.url, ...completeness },
+      evidence: [textEvidence(page.url, { kind: "consumer_page_text", text, sourceUrl: page.url, ...completeness })]
+    });
+  }
+
+  const normalizedPageUrl = normalizeUrl(page.url);
+  const normalizedRecommendationRuleUrls = recommendationRuleUrls
+    .map(normalizeUrl)
+    .filter((url): url is string => Boolean(url));
+  const isRecommendationRulesPage =
+    RECOMMENDATION_RULES_RE.test(text) ||
+    (typeof normalizedPageUrl === "string" && normalizedRecommendationRuleUrls.includes(normalizedPageUrl));
+  if (isRecommendationRulesPage) {
+    facts.push({
+      pageUrl: page.url,
+      factType: "recommendation_rules_text",
+      value: { text, sourceUrl: page.url, ...completeness },
+      evidence: [textEvidence(page.url, { kind: "recommendation_rules_text", text, sourceUrl: page.url, ...completeness })]
+    });
+  }
+}
+
+function readablePageText($: cheerio.CheerioAPI, maxChars: number): string {
+  const clone = $.root().clone();
+  clone.find("script, style, noscript, template, svg").remove();
+  const text = compactText(clone.text(), maxChars);
+  return text;
+}
+
+function looksConsumerRelevantUrl(url: string): boolean {
+  return /(offer|oferta|terms|return|refund|claim|complaint|delivery|payment|contacts?|vozvrat|oplata|dostavka|pretenz)/i.test(url);
 }
 
 function extractLinks($: cheerio.CheerioAPI, pageUrl: string): LinkCandidate[] {

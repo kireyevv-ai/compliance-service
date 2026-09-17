@@ -12,7 +12,12 @@ export type PilotBenchmarkRuleId =
   | "PD-016"
   | "PD-017"
   | "PD-018"
-  | "PD-019";
+  | "PD-019"
+  | "PD-024"
+  | "EC-010"
+  | "EC-012"
+  | "REC-003"
+  | "LANG-001";
 export type BenchmarkExpectedVerdict = SemanticEvaluationStatus;
 export type BenchmarkExpectedObservation = SemanticObservation;
 
@@ -23,7 +28,10 @@ export interface BenchmarkEvidence {
     | "marketing_consent_control_found"
     | "rendered_marketing_consent_found"
     | "form_fields"
-    | "external_service_matches";
+    | "external_service_matches"
+    | "consumer_page_text"
+    | "paid_addon_control_found"
+    | "recommendation_rules_text";
   excerpt: string;
   completeness: SemanticEvidenceCompleteness;
   truncated?: boolean;
@@ -145,7 +153,52 @@ export const PILOT_BENCHMARK_CASES: PilotBenchmarkCase[] = [
   cMany("PD-019-F02", "PD-019", "FAIL", "ABSENT", "No-transfer claim contradicts confirmed mailing processor.", [service("Найден подтвержденный внешний обработчик: Unisender, категория email_marketing."), policy("Оператор не предоставляет персональные данные третьим лицам.", false, "COMPLETE")]),
   cMany("PD-019-F03", "PD-019", "FAIL", "ABSENT", "No-transfer claim contradicts confirmed CRM processor.", [service("Найден подтвержденный внешний обработчик: Bitrix24, категория CRM."), policy("Персональные данные третьим сторонам не раскрываются.", false, "COMPLETE")]),
   cMany("PD-019-M01", "PD-019", "MANUAL_CHECK", "AMBIGUOUS", "Relevance is ambiguous.", [service("Найден внешний сервис, но связь с обработкой персональных данных не подтверждена.", "UNKNOWN"), policy("Персональные данные третьим лицам не передаются.", false, "COMPLETE")]),
-  cMany("PD-019-M02", "PD-019", "MANUAL_CHECK", "ABSENT", "Incomplete service evidence cannot prove contradiction.", [service("Возможно используется внешний обработчик аналитики.", "PARTIAL"), policy("Персональные данные третьим лицам не передаются.", false, "COMPLETE")])]
+  cMany("PD-019-M02", "PD-019", "MANUAL_CHECK", "ABSENT", "Incomplete service evidence cannot prove contradiction.", [service("Возможно используется внешний обработчик аналитики.", "PARTIAL"), policy("Персональные данные третьим лицам не передаются.", false, "COMPLETE")]),
+
+  c("PD-024-P01", "PD-024", "PASS", "ABSENT", "Ordinary contact form has no special-category signal.", form("Форма консультации: имя, телефон, электронная почта.", "COMPLETE")),
+  c("PD-024-P02", "PD-024", "PASS", "ABSENT", "Order form collects ordinary delivery data.", form("Форма заказа: ФИО, телефон, адрес доставки.", "COMPLETE")),
+  c("PD-024-P03", "PD-024", "PASS", "ABSENT", "Health topic page is not a form field collection signal.", form("Страница услуги медицинского центра содержит форму: имя и телефон для записи.", "COMPLETE")),
+  c("PD-024-F01", "PD-024", "MANUAL_CHECK", "PRESENT", "Form asks for diagnosis.", form("Форма записи содержит поле: диагноз или жалобы пациента.", "COMPLETE")),
+  c("PD-024-F02", "PD-024", "MANUAL_CHECK", "PRESENT", "Form asks for disability status.", form("Анкета содержит поле: инвалидность, группа инвалидности.", "COMPLETE")),
+  c("PD-024-F03", "PD-024", "MANUAL_CHECK", "PRESENT", "Form asks for religious belief information.", form("Форма сообщества содержит поле: религиозные убеждения.", "COMPLETE")),
+  c("PD-024-M01", "PD-024", "MANUAL_CHECK", "AMBIGUOUS", "Medical wording is unclear.", form("Форма содержит поле: профиль здоровья.", "UNKNOWN")),
+  c("PD-024-M02", "PD-024", "MANUAL_CHECK", "ABSENT", "Partial form evidence cannot prove absence.", form("Фрагмент формы: имя.", "PARTIAL")),
+
+  c("EC-010-P01", "EC-010", "PASS", "PRESENT", "Consumer page gives complaint email.", consumer("Претензии и жалобы по заказу можно направить на адрес claim@example.test.")),
+  c("EC-010-P02", "EC-010", "PASS", "PRESENT", "Return page describes written claim procedure.", consumer("Для возврата товара покупатель направляет заявление и претензию через форму обратной связи.")),
+  c("EC-010-P03", "EC-010", "PASS", "PRESENT", "Offer explains appeals channel.", consumer("Обращения и жалобы покупателей принимаются в личном кабинете или по адресу поддержки.")),
+  c("EC-010-F01", "EC-010", "FAIL", "ABSENT", "Complete consumer text has only payment and delivery.", consumer("Оплата производится картой. Доставка выполняется курьером. Срок доставки два дня.", "COMPLETE")),
+  c("EC-010-F02", "EC-010", "FAIL", "ABSENT", "Complete offer omits complaints.", consumer("Оферта описывает товар, цену и порядок оплаты без порядка претензий.", "COMPLETE")),
+  c("EC-010-F03", "EC-010", "FAIL", "ABSENT", "General contacts alone are not complaint procedure.", consumer("Контакты магазина: info@example.test, телефон +7 999 000-00-00.", "COMPLETE")),
+  c("EC-010-M01", "EC-010", "MANUAL_CHECK", "ABSENT", "Partial page cannot prove absence.", consumer("Раздел обращений приведён ниже.", "PARTIAL")),
+  c("EC-010-M02", "EC-010", "MANUAL_CHECK", "AMBIGUOUS", "Support wording is unclear.", consumer("По всем вопросам используйте удобный способ связи.")),
+
+  c("EC-012-P01", "EC-012", "PASS", "PRESENT", "Paid add-on can be removed.", addon("В корзине добавлена платная гарантия; рядом кнопка убрать, заказ можно оформить без неё.", "COMPLETE")),
+  c("EC-012-P02", "EC-012", "PASS", "PRESENT", "Optional service is selectable.", addon("Дополнительная настройка товара предлагается как необязательная услуга с возможностью отказаться.", "COMPLETE")),
+  c("EC-012-P03", "EC-012", "PASS", "PRESENT", "Preselected but removable add-on is not mandatory here.", addon("Платная страховка предварительно выбрана, но пользователь может снять выбор и продолжить покупку.", "COMPLETE")),
+  c("EC-012-F01", "EC-012", "FAIL", "ABSENT", "Checkout says paid service is required.", addon("Для оформления заказа необходимо приобрести платную настройку; без неё продолжить нельзя.", "COMPLETE")),
+  c("EC-012-F02", "EC-012", "FAIL", "ABSENT", "Add-on cannot be removed.", addon("Платная гарантия включена в заказ и не может быть удалена из корзины.", "COMPLETE")),
+  c("EC-012-F03", "EC-012", "FAIL", "ABSENT", "Main purchase is conditioned on paid package.", addon("Товар продаётся только вместе с обязательным сервисным пакетом за отдельную плату.", "COMPLETE")),
+  c("EC-012-M01", "EC-012", "MANUAL_CHECK", "AMBIGUOUS", "Paid add-on shown but optionality unclear.", addon("В корзине отображается платная услуга упаковки.")),
+  c("EC-012-M02", "EC-012", "MANUAL_CHECK", "ABSENT", "Partial checkout fragment cannot prove mandatory nature.", addon("Продолжение оформления заказа недоступно.", "PARTIAL")),
+
+  c("REC-003-P01", "REC-003", "PASS", "PRESENT", "Russian rules text is accessible.", recommenderRules("Правила применения рекомендательных технологий опубликованы на русском языке и доступны без входа.")),
+  c("REC-003-P02", "REC-003", "PASS", "PRESENT", "Russian equivalent is present.", recommenderRules("Rules of recommendation technologies / Правила рекомендательных технологий: документ доступен на русском языке.")),
+  c("REC-003-P03", "REC-003", "PASS", "PRESENT", "Public Russian rules page.", recommenderRules("Пользователь может свободно ознакомиться с правилами работы рекомендаций на этой странице.")),
+  c("REC-003-F01", "REC-003", "FAIL", "ABSENT", "Rules are foreign-language only.", recommenderRules("Recommendation Technology Rules are available only in English. Русская версия отсутствует.", "COMPLETE")),
+  c("REC-003-F02", "REC-003", "FAIL", "ABSENT", "Rules require login.", recommenderRules("Для просмотра правил рекомендательных технологий необходимо войти в личный кабинет.", "COMPLETE")),
+  c("REC-003-F03", "REC-003", "FAIL", "ABSENT", "Rules page is unavailable.", recommenderRules("Правила рекомендательных технологий временно недоступны; доступ запрещён.", "COMPLETE")),
+  c("REC-003-M01", "REC-003", "MANUAL_CHECK", "AMBIGUOUS", "Rules text is too short.", recommenderRules("Правила рекомендаций.")),
+  c("REC-003-M02", "REC-003", "MANUAL_CHECK", "ABSENT", "Partial rules evidence cannot prove unavailability.", recommenderRules("Русская версия размещена далее.", "PARTIAL")),
+
+  c("LANG-001-P01", "LANG-001", "PASS", "PRESENT", "Consumer information is in Russian.", consumer("Доставка, оплата, возврат товара и сведения о продавце указаны на русском языке.", "COMPLETE")),
+  c("LANG-001-P02", "LANG-001", "PASS", "PRESENT", "Foreign brand name only is not mandatory consumer info.", consumer("Название товара: Smart Bottle Pro. Условия покупки и возврата указаны на русском языке.", "COMPLETE")),
+  c("LANG-001-P03", "LANG-001", "PASS", "PRESENT", "Russian equivalent exists.", consumer("Delivery terms / Условия доставки: курьерская доставка по Москве.", "COMPLETE")),
+  c("LANG-001-F01", "LANG-001", "FAIL", "ABSENT", "Mandatory return terms are English-only.", consumer("Return policy: items may be returned within 14 days. Russian translation is not provided.", "COMPLETE")),
+  c("LANG-001-F02", "LANG-001", "FAIL", "ABSENT", "Seller information is foreign-only.", consumer("Seller: Example LLC, address and complaint procedure are available only in English.", "COMPLETE")),
+  c("LANG-001-F03", "LANG-001", "FAIL", "ABSENT", "Payment and delivery terms are foreign-only.", consumer("Payment and delivery terms are available in English only; no Russian equivalent.", "COMPLETE")),
+  c("LANG-001-M01", "LANG-001", "MANUAL_CHECK", "AMBIGUOUS", "Unclear whether text is mandatory consumer information.", consumer("Premium support available worldwide.")),
+  c("LANG-001-M02", "LANG-001", "MANUAL_CHECK", "ABSENT", "Partial fragment cannot prove foreign-only mandatory info.", consumer("Return policy:", "PARTIAL"))]
 
 export function buildBenchmarkInput(testCase: PilotBenchmarkCase): SemanticEvaluationInput {
   const rule = ruleCriteria.get(testCase.ruleId);
@@ -212,6 +265,18 @@ function form(excerpt: string, completeness: SemanticEvidenceCompleteness = "COM
 
 function service(excerpt: string, completeness: SemanticEvidenceCompleteness = "COMPLETE"): BenchmarkEvidence {
   return { factType: "external_service_matches", excerpt, completeness };
+}
+
+function consumer(excerpt: string, completeness: SemanticEvidenceCompleteness = "UNKNOWN"): BenchmarkEvidence {
+  return { factType: "consumer_page_text", excerpt, completeness };
+}
+
+function addon(excerpt: string, completeness: SemanticEvidenceCompleteness = "UNKNOWN"): BenchmarkEvidence {
+  return { factType: "paid_addon_control_found", excerpt, completeness };
+}
+
+function recommenderRules(excerpt: string, completeness: SemanticEvidenceCompleteness = "UNKNOWN"): BenchmarkEvidence {
+  return { factType: "recommendation_rules_text", excerpt, completeness };
 }
 
 function policy(
