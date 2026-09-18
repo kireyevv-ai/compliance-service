@@ -50,6 +50,7 @@ const RECOMMENDER_SIGNAL_FACTS = new Set([
 ]);
 
 const LANGUAGE_SIGNAL_FACTS = new Set([
+  "foreign_only_consumer_info_signal",
   "public_non_ad_consumer_info_foreign_only",
   "page_language_signal"
 ]);
@@ -162,9 +163,7 @@ export function getOwnerQuestionApplicability(
       if (!["B2C_SERVICE", "ECOMMERCE"].includes(context.siteType)) {
         return "NOT_NEEDED";
       }
-      return hasPositiveFact(context.facts, new Set(["public_non_ad_consumer_info_foreign_only"]))
-        ? "REQUIRED"
-        : "UNRESOLVED";
+      return languageQuestionApplicability(context.facts);
     default:
       throw new Error(`Unknown owner question: ${questionId}`);
   }
@@ -462,6 +461,9 @@ function evaluateLanguageException(context: OwnerContextInput): OwnerRuleEvaluat
   if (option === "NO_EXCEPTION") {
     return evaluated(ruleId, questionIds, "WARNING", answer.answer, siteRefs, "Владелец указал, что исключение не применяется.");
   }
+  if (hasConfirmedForeignOnlyConsumerInfo(context.facts)) {
+    return conflict(ruleId, questionIds, answer.answer, siteRefs);
+  }
   return evaluated(ruleId, questionIds, "NOT_APPLICABLE", answer.answer, siteRefs, "Владелец указал возможное исключение из языкового требования.");
 }
 
@@ -500,6 +502,19 @@ function recommenderQuestionApplicability(facts: Fact[]): OwnerApplicabilityStat
     return "REQUIRED";
   }
   if (facts.some((fact) => fact.factType === "recommendation_technology_signal" && fact.value.signal === "NONE")) {
+    return "NOT_NEEDED";
+  }
+  return "UNRESOLVED";
+}
+
+function languageQuestionApplicability(facts: Fact[]): OwnerApplicabilityStatus {
+  if (hasPositiveFact(facts, new Set(["public_non_ad_consumer_info_foreign_only"]))) {
+    return "REQUIRED";
+  }
+  if (facts.some((fact) => fact.factType === "foreign_only_consumer_info_signal" && (fact.value.signal === "CONFIRMED" || fact.value.signal === "SUSPECTED"))) {
+    return "REQUIRED";
+  }
+  if (facts.some((fact) => fact.factType === "foreign_only_consumer_info_signal" && fact.value.signal === "NONE")) {
     return "NOT_NEEDED";
   }
   return "UNRESOLVED";
@@ -552,6 +567,14 @@ function hasConfirmedAdvertisingSignal(facts: Fact[]): boolean {
     (fact) =>
       (fact.factType === "advertising_signal" && fact.value.signal === "CONFIRMED") ||
       ((fact.factType === "ad_label_text_found" || fact.factType === "erid_token_candidate") && factIsPositive(fact))
+  );
+}
+
+function hasConfirmedForeignOnlyConsumerInfo(facts: Fact[]): boolean {
+  return facts.some(
+    (fact) =>
+      (fact.factType === "foreign_only_consumer_info_signal" && fact.value.signal === "CONFIRMED") ||
+      (fact.factType === "public_non_ad_consumer_info_foreign_only" && factIsPositive(fact))
   );
 }
 

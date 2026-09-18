@@ -20,6 +20,8 @@ export type StaticFactType =
   | "privacy_policy_url"
   | "privacy_policy_text"
   | "consumer_page_text"
+  | "foreign_only_consumer_info_signal"
+  | "public_non_ad_consumer_info_foreign_only"
   | "recommendation_technology_signal"
   | "recommendation_technology_suspected"
   | "recommendation_technology_confirmed"

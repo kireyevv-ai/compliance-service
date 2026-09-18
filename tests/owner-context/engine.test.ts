@@ -831,6 +831,60 @@ describe("owner context engine", () => {
     expect(getRequiredOwnerQuestions(scanContext)).not.toContain("Q_RECOMMENDER_TECH_USE");
   });
 
+  it("handles foreign-only consumer language signal through owner bridge", () => {
+    const noneContext = context({
+      siteType: "ECOMMERCE",
+      facts: [fact("foreign_only_consumer_info_signal", { signal: "NONE", found: false })]
+    });
+    expect(getOwnerQuestionApplicability("Q_LANGUAGE_EXCEPTION", noneContext)).toBe("NOT_NEEDED");
+
+    const suspectedContext = context({
+      siteType: "ECOMMERCE",
+      facts: [fact("foreign_only_consumer_info_signal", { signal: "SUSPECTED", found: true })]
+    });
+    expect(getOwnerQuestionApplicability("Q_LANGUAGE_EXCEPTION", suspectedContext)).toBe("REQUIRED");
+    expect(
+      evaluationFor(
+        evaluateOwnerRules(
+          context({
+            siteType: "ECOMMERCE",
+            facts: [fact("foreign_only_consumer_info_signal", { signal: "SUSPECTED", found: true })],
+            answers: [answer("Q_LANGUAGE_EXCEPTION", { unknown: true })]
+          })
+        ),
+        "LANG-002"
+      )
+    ).toMatchObject({ status: "MANUAL_CHECK", reasonCode: "OWNER_UNKNOWN" });
+
+    const noException = evaluationFor(
+      evaluateOwnerRules(
+        context({
+          siteType: "ECOMMERCE",
+          facts: [fact("foreign_only_consumer_info_signal", { signal: "CONFIRMED", found: true })],
+          answers: [answer("Q_LANGUAGE_EXCEPTION", { type: "SINGLE_SELECT", optionId: "NO_EXCEPTION" })]
+        })
+      ),
+      "LANG-002"
+    );
+    expect(noException.status).toBe("WARNING");
+
+    const conflictingException = evaluationFor(
+      evaluateOwnerRules(
+        context({
+          siteType: "ECOMMERCE",
+          facts: [fact("foreign_only_consumer_info_signal", { signal: "CONFIRMED", found: true })],
+          answers: [answer("Q_LANGUAGE_EXCEPTION", { type: "SINGLE_SELECT", optionId: "TRADEMARK_OR_BRAND" })]
+        })
+      ),
+      "LANG-002"
+    );
+    expect(conflictingException).toMatchObject({
+      status: "MANUAL_CHECK",
+      reasonCode: "OWNER_ANSWER_CONFLICTS_WITH_SITE_EVIDENCE",
+      conflictDetected: true
+    });
+  });
+
   it("confirms recommender applicability from public site evidence without requiring owner answer", () => {
     const result = evaluateOwnerRules(
       context({

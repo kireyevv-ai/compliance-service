@@ -344,6 +344,137 @@ describe("static HTML fact extraction", () => {
     });
   });
 
+  it("detects foreign-only consumer delivery and return terms", () => {
+    const result = extractStaticFacts(
+      [
+        page(
+          "https://shop.test/delivery",
+          `<main><section>Delivery: 3-5 business days. Returns are accepted within 14 days after purchase.</section></main>`
+        )
+      ],
+      { crawlCompleted: true, startUrl: "https://shop.test/delivery" }
+    );
+
+    expect(values(result, "foreign_only_consumer_info_signal")).toContainEqual(
+      expect.objectContaining({ signal: "CONFIRMED", found: true })
+    );
+    expect(values(result, "public_non_ad_consumer_info_foreign_only")).toContainEqual(
+      expect.objectContaining({ found: true, detectedLanguage: "foreign" })
+    );
+  });
+
+  it("does not confirm foreign-only consumer info when a Russian equivalent is in the same block", () => {
+    const result = extractStaticFacts(
+      [
+        page(
+          "https://shop.test/delivery",
+          `<main><section>Delivery: 3-5 days. Returns within 14 days. Доставка: 3-5 дней. Возврат в течение 14 дней.</section></main>`
+        )
+      ],
+      { crawlCompleted: true, startUrl: "https://shop.test/delivery" }
+    );
+
+    expect(values(result, "foreign_only_consumer_info_signal")).not.toContainEqual(
+      expect.objectContaining({ signal: "CONFIRMED" })
+    );
+    expect(hasFact(result, "public_non_ad_consumer_info_foreign_only")).toBe(false);
+  });
+
+  it("does not confirm foreign-only consumer info when a Russian equivalent is in a separate block on the same page", () => {
+    const result = extractStaticFacts(
+      [
+        page(
+          "https://shop.test/delivery",
+          `
+            <main>
+              <section>Delivery: 3-5 business days. Returns are accepted within 14 days after purchase.</section>
+              <section>Доставка: 3-5 дней. Возврат в течение 14 дней после покупки.</section>
+            </main>
+          `
+        )
+      ],
+      { crawlCompleted: true, startUrl: "https://shop.test/delivery" }
+    );
+
+    expect(values(result, "foreign_only_consumer_info_signal")).not.toContainEqual(
+      expect.objectContaining({ signal: "CONFIRMED" })
+    );
+    expect(hasFact(result, "public_non_ad_consumer_info_foreign_only")).toBe(false);
+  });
+
+  it("does not let unrelated Russian text elsewhere neutralize foreign-only consumer terms", () => {
+    const result = extractStaticFacts(
+      [
+        page(
+          "https://shop.test/delivery",
+          `
+            <main>
+              <section>Delivery: 3-5 business days. Returns are accepted within 14 days after purchase.</section>
+              <section>О компании: мы работаем с 2010 года и любим качественный сервис.</section>
+            </main>
+          `
+        )
+      ],
+      { crawlCompleted: true, startUrl: "https://shop.test/delivery" }
+    );
+
+    expect(values(result, "foreign_only_consumer_info_signal")).toContainEqual(
+      expect.objectContaining({ signal: "CONFIRMED", found: true })
+    );
+  });
+
+  it("does not flag brand, product model, isolated sale text, navigation, or translated consumer terms", () => {
+    const result = extractStaticFacts(
+      [
+        page(
+          "https://shop.test/product",
+          `
+            <nav>Home Catalog Sale</nav>
+            <h1>Smart Bottle Pro</h1>
+            <p>Brand: Aqua Max</p>
+            <p>Delivery terms / Условия доставки: курьерская доставка по Москве.</p>
+          `
+        )
+      ],
+      { crawlCompleted: true, startUrl: "https://shop.test/product" }
+    );
+
+    expect(values(result, "foreign_only_consumer_info_signal")).toContainEqual(
+      expect.objectContaining({ signal: "NONE", found: false })
+    );
+    expect(hasFact(result, "public_non_ad_consumer_info_foreign_only")).toBe(false);
+  });
+
+  it("keeps short foreign consumer context as SUSPECTED rather than CONFIRMED", () => {
+    const result = extractStaticFacts(
+      [page("https://shop.test/help", `<main><p>Return policy:</p></main>`)],
+      { crawlCompleted: true, startUrl: "https://shop.test/help" }
+    );
+
+    expect(values(result, "foreign_only_consumer_info_signal")).toContainEqual(
+      expect.objectContaining({ signal: "SUSPECTED", found: true })
+    );
+    expect(hasFact(result, "public_non_ad_consumer_info_foreign_only")).toBe(false);
+  });
+
+  it("does not create foreign-only consumer NONE when crawl coverage is insufficient", () => {
+    const partialCrawl = extractStaticFacts(
+      [page("https://shop.test/", `<main>Каталог</main>`)],
+      { crawlCompleted: false, startUrl: "https://shop.test/" }
+    );
+    const contentLimited = extractStaticFacts(
+      [{ ...page("https://shop.test/", `<main>Access denied</main>`), status: 403, contentLimited: true }],
+      { crawlCompleted: true, startUrl: "https://shop.test/" }
+    );
+    const zeroPages = extractStaticFacts([], { crawlCompleted: true, startUrl: "https://shop.test/" });
+
+    for (const result of [partialCrawl, contentLimited, zeroPages]) {
+      expect(values(result, "foreign_only_consumer_info_signal")).not.toContainEqual(
+        expect.objectContaining({ signal: "NONE" })
+      );
+    }
+  });
+
   it("detects general public offer links conservatively", () => {
     const result = extractStaticFacts(
       [

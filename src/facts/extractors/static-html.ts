@@ -20,12 +20,14 @@ type PageSignals = {
   hasRublePrice: boolean;
   hasMarketingSubscription: boolean;
   advertisingSignal: AdvertisingSignal;
+  foreignOnlyConsumerInfoSignal: ForeignOnlyConsumerInfoSignal;
   recommendationSignal: RecommendationTechnologySignal;
   hasRecommendationNotice: boolean;
   hasRecommendationRulesDocument: boolean;
 };
 
 type AdvertisingSignal = "NONE" | "CANDIDATE" | "CONFIRMED";
+type ForeignOnlyConsumerInfoSignal = "NONE" | "SUSPECTED" | "CONFIRMED";
 type RecommendationTechnologySignal = "NONE" | "SUSPECTED" | "CONFIRMED";
 
 type TextCandidate = {
@@ -60,6 +62,33 @@ const SPECIALIZED_OFFER_RE =
   /(подарочн.*сертификат|электронн.*сертификат|подарочн.*карт|бонусн.*программ|программ.*лояльност|акци[яи]|промо|спецпредлож|сертификат|gift[-_\s]?(card|certificate)|bonus|loyalty|promo|promotion)/i;
 const CONSUMER_TEXT_RE =
   /(претенз|жалоб|обращени|возврат|refund|return|claim|complaint|доставк|delivery|оплат|payment|услови|оферт|контакт|seller|продавец|исполнитель)/i;
+const FOREIGN_CONSUMER_RE =
+  /\b(delivery|shipping|payment|returns?|refund|warranty|guarantee|terms|purchase|service\s+terms|instructions?|complaints?|claims?|seller|support)\b/i;
+const RUSSIAN_CONSUMER_EQUIVALENT_RE =
+  /(доставк|оплат|возврат|гаранти|услови|покупк|услуг|инструкц|жалоб|претенз|продавец|поддержк)/i;
+const FOREIGN_CONSUMER_CATEGORY_PATTERNS = [
+  { category: "delivery", pattern: /\b(delivery|shipping)\b/i },
+  { category: "returns", pattern: /\b(returns?|refund)\b/i },
+  { category: "payment", pattern: /\bpayment\b/i },
+  { category: "warranty", pattern: /\b(warranty|guarantee)\b/i },
+  { category: "terms", pattern: /\b(terms|purchase|service\s+terms)\b/i },
+  { category: "instructions", pattern: /\binstructions?\b/i },
+  { category: "complaints", pattern: /\b(complaints?|claims?)\b/i },
+  { category: "seller", pattern: /\bseller\b/i },
+  { category: "support", pattern: /\bsupport\b/i }
+] as const;
+const RUSSIAN_CONSUMER_CATEGORY_PATTERNS = [
+  { category: "delivery", pattern: /доставк/i },
+  { category: "returns", pattern: /возврат/i },
+  { category: "payment", pattern: /оплат/i },
+  { category: "warranty", pattern: /гаранти/i },
+  { category: "terms", pattern: /(услови|покупк|услуг)/i },
+  { category: "instructions", pattern: /инструкц/i },
+  { category: "complaints", pattern: /(жалоб|претенз)/i },
+  { category: "seller", pattern: /продавец/i },
+  { category: "support", pattern: /поддержк/i }
+] as const;
+const LATIN_TEXT_RE = /[a-z][a-z\s.,:;!?()/%–—-]{20,}/i;
 const RECOMMENDATION_RULES_RE =
   /(правил.*рекомендательн|рекомендательн.*технолог|recommendation.*rules|recommender.*rules|recommendation.*technology)/i;
 const RECOMMENDATION_CONFIRMED_RE =
@@ -109,6 +138,7 @@ export function extractStaticFacts(
       hasRublePrice: false,
       hasMarketingSubscription: false,
       advertisingSignal: "NONE",
+      foreignOnlyConsumerInfoSignal: "NONE",
       recommendationSignal: "NONE",
       hasRecommendationNotice: false,
       hasRecommendationRulesDocument: false
@@ -149,6 +179,7 @@ export function extractStaticFacts(
 
     extractFormFacts($, page, facts, pageSignals);
     extractAdvertisingFacts($, page, facts, pageSignals);
+    extractForeignOnlyConsumerInfoFacts($, page, facts, pageSignals);
     extractRecommendationTechnologyFacts($, page, facts, pageSignals);
     extractConsumerPageTextFacts($, page, facts, pageRecommendationRulesLinks.map((link) => link.url));
     extractSellerFacts($, page.url, sellerCandidates);
@@ -478,6 +509,71 @@ function extractAdvertisingFacts(
         factType: "erid_token_candidate",
         value: { found: true, blockId, selector },
         evidence: [textEvidence(page.url, { kind: "erid_token_candidate", selector, blockId, context: nearby(text, firstMatch(text, ERID_RE) ?? text) })]
+      });
+    }
+  });
+}
+
+function extractForeignOnlyConsumerInfoFacts(
+  $: cheerio.CheerioAPI,
+  page: CrawledPage,
+  facts: ExtractedFact[],
+  pageSignals: PageSignals
+): void {
+  const pageText = readablePageText($, 12_000);
+  const russianPageCategories = consumerCategories(pageText, RUSSIAN_CONSUMER_CATEGORY_PATTERNS);
+
+  $("main, section, article, aside, div, p, li").each((index, element) => {
+    const block = $(element);
+    const text = compactText(block.text(), 900);
+    if (!text || text.length < 8 || (!LATIN_TEXT_RE.test(text) && !FOREIGN_CONSUMER_RE.test(text))) {
+      return;
+    }
+    if (RUSSIAN_CONSUMER_EQUIVALENT_RE.test(text)) {
+      return;
+    }
+
+    const consumerMatch = firstMatch(text, FOREIGN_CONSUMER_RE);
+    if (!consumerMatch) {
+      return;
+    }
+
+    const foreignCategories = consumerCategories(text, FOREIGN_CONSUMER_CATEGORY_PATTERNS);
+    const hasRussianEquivalentOnPage = [...foreignCategories].some((category) => russianPageCategories.has(category));
+    const signal: ForeignOnlyConsumerInfoSignal =
+      hasRussianEquivalentOnPage || !hasSubstantialForeignConsumerText(text) ? "SUSPECTED" : "CONFIRMED";
+    const selector = `${element.tagName.toLowerCase()}:eq(${index})`;
+    const context = nearby(text, consumerMatch, 260);
+    pageSignals.foreignOnlyConsumerInfoSignal =
+      signal === "CONFIRMED" ? "CONFIRMED" : pageSignals.foreignOnlyConsumerInfoSignal === "CONFIRMED" ? "CONFIRMED" : "SUSPECTED";
+
+    const evidence = textEvidence(page.url, {
+      kind: "foreign_only_consumer_info_signal",
+      selector,
+      signal,
+      detectedLanguage: "foreign",
+      reason: signal === "CONFIRMED" ? "FOREIGN_ONLY_CONSUMER_TERMS" : "POSSIBLE_FOREIGN_CONSUMER_CONTEXT",
+      context,
+      fragment: compactText($.html(element), 900)
+    });
+    facts.push({
+      pageUrl: page.url,
+      factType: "foreign_only_consumer_info_signal",
+      value: {
+        signal,
+        found: true,
+        selector,
+        detectedLanguage: "foreign",
+        reason: signal === "CONFIRMED" ? "FOREIGN_ONLY_CONSUMER_TERMS" : "POSSIBLE_FOREIGN_CONSUMER_CONTEXT"
+      },
+      evidence: [evidence]
+    });
+    if (signal === "CONFIRMED") {
+      facts.push({
+        pageUrl: page.url,
+        factType: "public_non_ad_consumer_info_foreign_only",
+        value: { found: true, selector, detectedLanguage: "foreign" },
+        evidence: [evidence]
       });
     }
   });
@@ -816,6 +912,8 @@ function pushCoverageAndCompletedAggregates(
   const anyRublePrice = collected.pageSignals.some((signal) => signal.hasRublePrice);
   const anyAdvertisingConfirmed = collected.pageSignals.some((signal) => signal.advertisingSignal === "CONFIRMED");
   const anyAdvertisingCandidate = collected.pageSignals.some((signal) => signal.advertisingSignal === "CANDIDATE");
+  const anyForeignOnlyConsumerConfirmed = collected.pageSignals.some((signal) => signal.foreignOnlyConsumerInfoSignal === "CONFIRMED");
+  const anyForeignOnlyConsumerSuspected = collected.pageSignals.some((signal) => signal.foreignOnlyConsumerInfoSignal === "SUSPECTED");
   const anyRecommendationConfirmed = collected.pageSignals.some((signal) => signal.recommendationSignal === "CONFIRMED");
   const anyRecommendationSuspected = collected.pageSignals.some((signal) => signal.recommendationSignal === "SUSPECTED");
   const anyRecommendationNotice = collected.pageSignals.some((signal) => signal.hasRecommendationNotice);
@@ -826,6 +924,10 @@ function pushCoverageAndCompletedAggregates(
   const advertisingCoverageSufficient = successfulHtmlPages > 0 && !options.maxPagesReached;
   if (advertisingCoverageSufficient && !anyAdvertisingConfirmed && !anyAdvertisingCandidate) {
     facts.push(advertisingSignalFact(evidencePageUrl, "NONE", "NO_ADVERTISING_SIGNALS", "По проверенным страницам признаки рекламных блоков не обнаружены."));
+  }
+  const languageCoverageSufficient = successfulHtmlPages > 0 && !options.maxPagesReached;
+  if (languageCoverageSufficient && !anyForeignOnlyConsumerConfirmed && !anyForeignOnlyConsumerSuspected) {
+    facts.push(foreignOnlyConsumerInfoSignalFact(evidencePageUrl, "NONE", "NO_FOREIGN_ONLY_CONSUMER_INFO", "По проверенным страницам потребительская информация только на иностранном языке не обнаружена."));
   }
   const recommendationCoverageSufficient = successfulHtmlPages > 0 && !options.maxPagesReached;
   if (recommendationCoverageSufficient && !anyRecommendationConfirmed && !anyRecommendationSuspected) {
@@ -935,6 +1037,20 @@ function advertisingSignalFact(
     factType: "advertising_signal",
     value: { signal, found: signal !== "NONE", reason },
     evidence: [textEvidence(pageUrl, { kind: "advertising_signal", signal, reason, context })]
+  };
+}
+
+function foreignOnlyConsumerInfoSignalFact(
+  pageUrl: string,
+  signal: ForeignOnlyConsumerInfoSignal,
+  reason: string,
+  context: string
+): ExtractedFact {
+  return {
+    pageUrl,
+    factType: "foreign_only_consumer_info_signal",
+    value: { signal, found: signal !== "NONE", reason },
+    evidence: [textEvidence(pageUrl, { kind: "foreign_only_consumer_info_signal", signal, reason, context })]
   };
 }
 
@@ -1130,6 +1246,18 @@ function stableHash(value: string): string {
     hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
   }
   return hash.toString(36);
+}
+
+function hasSubstantialForeignConsumerText(text: string): boolean {
+  const latinWords = text.match(/\b[a-z]{3,}\b/gi) ?? [];
+  return latinWords.length >= 6 || /(?:\d+\s*(?:-|–|to)\s*\d+\s*(?:business\s+)?days?|within\s+\d+\s+days?)/i.test(text);
+}
+
+function consumerCategories(
+  text: string,
+  patterns: readonly { category: string; pattern: RegExp }[]
+): Set<string> {
+  return new Set(patterns.filter(({ pattern }) => pattern.test(text)).map(({ category }) => category));
 }
 
 function compactText(value: string, max = 500): string {
