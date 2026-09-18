@@ -100,6 +100,17 @@ export async function getScanResult(scanId: string) {
   const facts = await getFactsForScan(db, scan.id);
   const externalServiceFact = facts.find((fact) => fact.factType === "external_service_detected");
   const coverageFact = facts.find((fact) => fact.factType === "scan_coverage");
+  const coverage = coverageFact
+    ? {
+        contentLimited: coverageFact.value.contentLimited === true,
+        limitationReason:
+          typeof coverageFact.value.limitationReason === "string" ? coverageFact.value.limitationReason : null,
+        successfulHtmlPages: numberValue(coverageFact.value.successfulHtmlPages),
+        httpErrorPages: numberValue(coverageFact.value.httpErrorPages),
+        pagesVisited: numberValue(coverageFact.value.pagesVisited),
+        maxPagesReached: coverageFact.value.maxPagesReached === true
+      }
+    : null;
   const rules = loadRuntimeRules();
   const evaluations = evaluateRulesForScan({ scan, facts, evidence: await getEvidenceForScan(db, scan.id), rules });
   const applicableEvaluations = evaluations.filter((evaluation) => !isNotApplicableReason(reasonFor(evaluation)));
@@ -113,9 +124,9 @@ export async function getScanResult(scanId: string) {
     findings,
     evidenceByFindingId,
     externalServices: externalServiceFact ? formatExternalServices(externalServiceFact.value) : [],
-    contentLimited: coverageFact?.value.contentLimited === true,
-    contentLimitationReason:
-      typeof coverageFact?.value.limitationReason === "string" ? coverageFact.value.limitationReason : null,
+    coverage,
+    contentLimited: coverage?.contentLimited === true,
+    contentLimitationReason: coverage?.limitationReason ?? null,
     ruleEvaluationSummary: {
       applicableCount: applicableEvaluations.length,
       evaluatedCount,
@@ -123,6 +134,10 @@ export async function getScanResult(scanId: string) {
     },
     noEvaluationResults: applicableEvaluations.filter((evaluation) => evaluation.status === "NO_EVALUATION")
   };
+}
+
+function numberValue(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function isNotApplicableReason(reason: string | undefined): boolean {

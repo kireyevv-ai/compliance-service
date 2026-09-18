@@ -24,6 +24,7 @@ export async function GET(_request: Request, context: { params: Promise<{ scanId
     findings: result.findings,
     evidenceByFindingId: result.evidenceByFindingId,
     externalServices: result.externalServices,
+    coverage: result.coverage,
     ruleEvaluationSummary: result.ruleEvaluationSummary,
     noEvaluationResults: result.noEvaluationResults
   });

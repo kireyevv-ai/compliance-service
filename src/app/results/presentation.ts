@@ -9,6 +9,97 @@ export const EMPTY_RESULT_NOTE =
 export const SCOPE_DISCLAIMER =
   "Проверка носит информационный характер и охватывает только автоматизированные проверки, доступные в текущей версии сервиса.";
 
+export type CoverageOutcomeKind =
+  | "ANALYSIS_AVAILABLE"
+  | "PARTIAL"
+  | "ACCESS_PROTECTED"
+  | "RATE_LIMITED"
+  | "NETWORK_UNAVAILABLE";
+
+export interface CoverageSnapshot {
+  contentLimited?: boolean;
+  limitationReason?: string | null;
+  successfulHtmlPages?: number;
+  httpErrorPages?: number;
+  pagesVisited?: number;
+  maxPagesReached?: boolean;
+}
+
+export interface CoverageOutcome {
+  kind: CoverageOutcomeKind;
+  blocksResults: boolean;
+  title: string;
+  message: string;
+}
+
+export function coverageOutcomeForResult(input: {
+  scanStatus: string;
+  statusReason?: string | null;
+  coverage?: CoverageSnapshot | null;
+}): CoverageOutcome {
+  const reason = input.coverage?.limitationReason ?? input.statusReason ?? "";
+  const successfulHtmlPages = Number(input.coverage?.successfulHtmlPages ?? 0);
+  const pagesVisited = Number(input.coverage?.pagesVisited ?? 0);
+
+  if (input.scanStatus === "FAILED" && /timeout|network|timed?\s*out/i.test(input.statusReason ?? "")) {
+    return {
+      kind: "NETWORK_UNAVAILABLE",
+      blocksResults: true,
+      title: "Не удалось проверить сайт",
+      message:
+        "Сайт не ответил вовремя или оказался недоступен для проверки. Оценить соответствие сайта требованиям сейчас невозможно."
+    };
+  }
+
+  if (isRateLimitReason(reason) && successfulHtmlPages === 0) {
+    return {
+      kind: "RATE_LIMITED",
+      blocksResults: true,
+      title: "Не удалось проверить сайт",
+      message:
+        "Сайт временно ограничил автоматические запросы. Проверка не выполнена. Попробуйте повторить её позже."
+    };
+  }
+
+  if (isAccessProtectionReason(reason) && (successfulHtmlPages === 0 || pagesVisited <= 1)) {
+    return {
+      kind: "ACCESS_PROTECTED",
+      blocksResults: true,
+      title: "Не удалось проверить сайт",
+      message:
+        "Сайт защищён от автоматического доступа. Система не смогла получить содержимое страниц, поэтому оценить соответствие сайта требованиям невозможно."
+    };
+  }
+
+  if (input.scanStatus === "COMPLETED" && successfulHtmlPages === 0) {
+    return {
+      kind: isRateLimitReason(reason) ? "RATE_LIMITED" : "NETWORK_UNAVAILABLE",
+      blocksResults: true,
+      title: "Не удалось проверить сайт",
+      message: isRateLimitReason(reason)
+        ? "Сайт временно ограничил автоматические запросы. Проверка не выполнена. Попробуйте повторить её позже."
+        : "Сайт не ответил вовремя или оказался недоступен для проверки. Оценить соответствие сайта требованиям сейчас невозможно."
+    };
+  }
+
+  if (input.coverage?.contentLimited === true || input.coverage?.maxPagesReached === true || Number(input.coverage?.httpErrorPages ?? 0) > 0) {
+    return {
+      kind: "PARTIAL",
+      blocksResults: false,
+      title: "Анализ выполнен частично",
+      message:
+        "Часть сайта была недоступна для проверки. Результаты относятся только к успешно прочитанным страницам."
+    };
+  }
+
+  return {
+    kind: "ANALYSIS_AVAILABLE",
+    blocksResults: false,
+    title: "Проверка выполнена",
+    message: ""
+  };
+}
+
 export function resultsHeaderSummaryText(summary: {
   fail: number;
   warning: number;
@@ -22,6 +113,14 @@ export function resultsHeaderSummaryText(summary: {
     checkedText: `Проверено ${evaluatedCount} параметров сайта.`,
     issueText: problemCount === 0 ? "Проблем не выявлено." : `Выявлено ${problemCount} проблем.`
   };
+}
+
+function isAccessProtectionReason(reason: string): boolean {
+  return /(anti.?bot|challenge|captcha|security|interstitial|access protection|access denied|forbidden|bot|vpnchee?ck|limited-content interstitial)/i.test(reason);
+}
+
+function isRateLimitReason(reason: string): boolean {
+  return /(HTTP\s*)?429|rate.?limit|too many requests/i.test(reason);
 }
 
 export type FindingGroup = "fix" | "attention" | "manual" | "passed";

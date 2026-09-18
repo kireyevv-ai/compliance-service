@@ -6,6 +6,7 @@ import { startScan, userSafeScanError } from "@/app/api/scans/helpers";
 import { claimNextQueuedScan, completeScan, failScan } from "@/db/repository";
 import {
   buildFindingViewModels,
+  coverageOutcomeForResult,
   EMPTY_RESULT_NOTE,
   EMPTY_RESULT_TITLE,
   formatExternalServices,
@@ -558,6 +559,69 @@ describe("results presentation", () => {
 
     expect(visibleCopy).toBe("Проверено 0 параметров сайта. Проблем не выявлено.");
     expect(visibleCopy).not.toMatch(/применим|не удалось|огранич|частич|anti-bot|oversized|crawler|browser/i);
+  });
+
+  it("blocks ordinary Results when anti-bot protection leaves no usable site content", () => {
+    const outcome = coverageOutcomeForResult({
+      scanStatus: "COMPLETED",
+      coverage: {
+        contentLimited: true,
+        limitationReason: "Limited-content interstitial URL",
+        pagesVisited: 1,
+        successfulHtmlPages: 1,
+        httpErrorPages: 0
+      }
+    });
+
+    expect(outcome.blocksResults).toBe(true);
+    expect(outcome.title).toBe("Не удалось проверить сайт");
+    expect(outcome.message).toContain("Сайт защищён от автоматического доступа");
+  });
+
+  it("blocks ordinary Results when rate limiting leaves zero usable pages", () => {
+    const outcome = coverageOutcomeForResult({
+      scanStatus: "COMPLETED",
+      coverage: {
+        contentLimited: true,
+        limitationReason: "HTTP 429",
+        pagesVisited: 1,
+        successfulHtmlPages: 0,
+        httpErrorPages: 1
+      }
+    });
+
+    expect(outcome.blocksResults).toBe(true);
+    expect(outcome.kind).toBe("RATE_LIMITED");
+    expect(outcome.message).toContain("временно ограничил автоматические запросы");
+  });
+
+  it("blocks ordinary Results when the scan timed out before reading content", () => {
+    const outcome = coverageOutcomeForResult({
+      scanStatus: "FAILED",
+      statusReason: "HTTP request timeout"
+    });
+
+    expect(outcome.blocksResults).toBe(true);
+    expect(outcome.kind).toBe("NETWORK_UNAVAILABLE");
+    expect(outcome.message).toContain("не ответил вовремя");
+  });
+
+  it("keeps positive Results visible when analysis is partial but some pages were read", () => {
+    const outcome = coverageOutcomeForResult({
+      scanStatus: "COMPLETED",
+      coverage: {
+        contentLimited: true,
+        limitationReason: "RESPONSE_BODY_TOO_LARGE",
+        pagesVisited: 8,
+        successfulHtmlPages: 6,
+        httpErrorPages: 0,
+        maxPagesReached: true
+      }
+    });
+
+    expect(outcome.blocksResults).toBe(false);
+    expect(outcome.kind).toBe("PARTIAL");
+    expect(outcome.message).toContain("Результаты относятся только к успешно прочитанным страницам");
   });
 
   it("hides unsafe failed-scan details", () => {

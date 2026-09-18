@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getScanResult, userSafeScanError } from "@/app/api/scans/helpers";
 import {
   buildFindingViewModels,
+  coverageOutcomeForResult,
   EMPTY_RESULT_NOTE,
   EMPTY_RESULT_TITLE,
   type EvidenceViewModel,
@@ -22,16 +23,23 @@ export default async function ResultsPage({ params }: { params: Promise<{ scanId
   }
 
   if (result.scan.status === "FAILED") {
+    const coverageOutcome = coverageOutcomeForResult({
+      scanStatus: result.scan.status,
+      statusReason: result.scan.statusReason,
+      coverage: result.coverage
+    });
+
     return (
       <main className="shell">
-        <section className="panel status-panel">
-          <p className="eyebrow">Ошибка проверки</p>
-          <h1>Не удалось проверить сайт</h1>
-          <p>{userSafeScanError(result.scan.statusReason) ?? "Проверка завершилась ошибкой."}</p>
-          <Link className="secondary-button" href="/">
-            Попробовать ещё раз
-          </Link>
-        </section>
+        <CoverageOutcomePanel
+          eyebrow="Проверка не выполнена"
+          title={coverageOutcome.title}
+          message={
+            coverageOutcome.blocksResults
+              ? coverageOutcome.message
+              : userSafeScanError(result.scan.statusReason) ?? "Проверка завершилась ошибкой."
+          }
+        />
       </main>
     );
   }
@@ -53,6 +61,24 @@ export default async function ResultsPage({ params }: { params: Promise<{ scanId
 
   const findingViews = buildFindingViewModels(result.findings, result.evidenceByFindingId);
   const summary = summarizeFindings(result.findings);
+  const coverageOutcome = coverageOutcomeForResult({
+    scanStatus: result.scan.status,
+    statusReason: result.scan.statusReason,
+    coverage: result.coverage
+  });
+
+  if (coverageOutcome.blocksResults) {
+    return (
+      <main className="shell results-shell">
+        <CoverageOutcomePanel
+          eyebrow="Проверка не выполнена"
+          title={coverageOutcome.title}
+          message={coverageOutcome.message}
+        />
+      </main>
+    );
+  }
+
   const visibleFindings = findingViews.filter((finding) => finding.status !== "PASS");
   const passFindings = findingViews.filter((finding) => finding.status === "PASS");
   const findingGroups = [
@@ -70,6 +96,14 @@ export default async function ResultsPage({ params }: { params: Promise<{ scanId
         <p>{headerSummary.checkedText}</p>
         <p>{headerSummary.issueText}</p>
       </section>
+
+      {coverageOutcome.kind === "PARTIAL" ? (
+        <CoverageOutcomePanel
+          eyebrow="Ограничение проверки"
+          title={coverageOutcome.title}
+          message={coverageOutcome.message}
+        />
+      ) : null}
 
       <section className="summary-grid" aria-label="Сводка проверки">
         <div className="summary-item fail">
@@ -174,6 +208,27 @@ export default async function ResultsPage({ params }: { params: Promise<{ scanId
         {SCOPE_DISCLAIMER}
       </p>
     </main>
+  );
+}
+
+function CoverageOutcomePanel({
+  eyebrow,
+  title,
+  message
+}: {
+  eyebrow: string;
+  title: string;
+  message: string;
+}) {
+  return (
+    <section className="panel status-panel coverage-panel">
+      <p className="eyebrow">{eyebrow}</p>
+      <h1>{title}</h1>
+      <p>{message}</p>
+      <Link className="secondary-button" href="/">
+        Повторить проверку
+      </Link>
+    </section>
   );
 }
 
