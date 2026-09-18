@@ -96,10 +96,12 @@ const RECOMMENDATION_CONFIRMED_RE =
   /(использ(?:уем|уются|ование)\s+рекомендательн(?:ых|ые)\s+технолог|примен(?:яем|яются|ение)\s+рекомендательн(?:ых|ые)\s+технолог|на\s+сайте\s+работают\s+рекомендательн(?:ые|ых)\s+технолог|recommendation\s+technolog(?:y|ies)\s+(?:are\s+used|used|notice))/i;
 const RECOMMENDATION_SUSPECTED_RE =
   /(вам\s+может\s+понравиться|похожие\s+(?:товары|услуги|материалы)|персональн(?:ая|ые|ый|ую)\s+(?:подборк|рекомендац)|рекоменд(?:уем|ации)\s+(?:для\s+вас|подобраны)|recommend(?:ed|ations?)\s+for\s+you|you\s+may\s+also\s+like)/i;
-const AD_LABEL_RE = /(?:^|[\s([{])(?:реклама|advertisement|advertising|ad)(?:[\s:.)\]}]|$)/i;
+const SHORT_AD_LABEL_RE = /^(?:реклама|advertisement|advertising|ad)\s*[:.]?$/i;
+const LEADING_AD_DISCLOSURE_RE = /^(?:реклама|advertisement|advertising|ad)\s*[:.]\s+\S/i;
 const AD_CANDIDATE_RE = /(скидк|акци[яи]|спецпредлож|промокод|баннер|новый\s+товар|купить\s+со\s+скидк|sale|discount|special\s+offer|promo\s+code)/i;
 const ERID_RE = /(?:erid|ерид|идентификатор\s+рекламы)\s*[:№#-]?\s*[a-zа-я0-9._-]{6,}/i;
 const ADVERTISER_RE = /(?:рекламодатель|advertiser)\s*[:—-]\s*[^\n.]{3,120}/i;
+const NAVIGATION_BLOCK_RE = /\b(?:menu|nav|navbar|navigation|breadcrumb|breadcrumbs|catalog|category|header|footer|dropdown|mega-menu|megamenu|topline)\b/i;
 const DOCUMENT_EXT_RE = /\.(pdf|doc|docx)(?:[?#].*)?$/i;
 const RUB_PRICE_RE = /((?:\d{1,3}(?:[\s\u00a0]\d{3})+|\d+)(?:[,.]\d{1,2})?)\s*(₽|руб\.?|рублей|RUB)(?=$|[\s.,;:!?<])/giu;
 const FOREIGN_PRICE_RE = /((?:\d{1,3}(?:[\s\u00a0]\d{3})+|\d+)(?:[,.]\d{1,2})?)\s*(\$|€|USD|EUR)(?=$|[\s.,;:!?<])/giu;
@@ -446,22 +448,41 @@ function extractAdvertisingFacts(
   facts: ExtractedFact[],
   pageSignals: PageSignals
 ): void {
+  const emittedTextKeys = new Set<string>();
+
   $("section, article, aside, div, a").each((index, element) => {
     const block = $(element);
-    const text = compactText(block.text(), 900);
+    const text = visibleElementText($, element, 900);
     if (!text || text.length < 8) {
       return;
     }
 
     const explicitFixture = block.attr("data-ad-confirmed") === "true";
-    const labelFound = explicitFixture || AD_LABEL_RE.test(text);
+    const labelFound = explicitFixture || hasBoundAdLabel($, block, text);
     const eridFound = ERID_RE.test(text);
     const advertiserFound = ADVERTISER_RE.test(text);
-    const candidateFound = AD_CANDIDATE_RE.test(text) || block.attr("data-ad-candidate") === "true";
+    const strongExplicitEvidence = labelFound || eridFound || advertiserFound;
+    const navigationLike = isNavigationLikeBlock(block);
+    if (navigationLike && !strongExplicitEvidence && block.attr("data-ad-candidate") !== "true") {
+      return;
+    }
+
+    const broadContainer = isBroadAdvertisingContainer(block, text);
+    const candidateFound =
+      !navigationLike &&
+      !broadContainer &&
+      isSubstantialAdvertisingCandidateText(text) &&
+      (AD_CANDIDATE_RE.test(text) || block.attr("data-ad-candidate") === "true");
     const signal: AdvertisingSignal = labelFound || eridFound || advertiserFound ? "CONFIRMED" : candidateFound ? "CANDIDATE" : "NONE";
     if (signal === "NONE") {
       return;
     }
+
+    const textKey = normalizeAdvertisingTextKey(page.url, text);
+    if (emittedTextKeys.has(textKey)) {
+      return;
+    }
+    emittedTextKeys.add(textKey);
 
     const selector = `${element.tagName.toLowerCase()}:eq(${index})`;
     const blockId = `ad-${index}-${stableHash(text)}`;
@@ -473,7 +494,7 @@ function extractAdvertisingFacts(
       signal,
       reason: signal === "CONFIRMED" ? "EXPLICIT_AD_EVIDENCE" : "PROMOTIONAL_BLOCK_CANDIDATE",
       context,
-      fragment: compactText($.html(element), 900)
+      fragment: visibleElementHtml($, element, 900)
     });
 
     pageSignals.advertisingSignal = signal === "CONFIRMED" ? "CONFIRMED" : pageSignals.advertisingSignal === "CONFIRMED" ? "CONFIRMED" : "CANDIDATE";
@@ -515,6 +536,71 @@ function extractAdvertisingFacts(
       });
     }
   });
+}
+
+function hasBoundAdLabel($: cheerio.CheerioAPI, block: cheerio.Cheerio<AnyNode>, text: string): boolean {
+  if (isAdLabelText(text) || isLeadingAdDisclosure(text)) {
+    return true;
+  }
+
+  if (text.length > 350 || block.find("a").length > 4) {
+    return false;
+  }
+
+  for (const child of block.children("span, p, b, strong, small, div").toArray().slice(0, 5)) {
+    const childText = visibleElementText($, child, 80);
+    if (isAdLabelText(childText)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function isAdLabelText(text: string): boolean {
+  return text.length <= 24 && SHORT_AD_LABEL_RE.test(text);
+}
+
+function isLeadingAdDisclosure(text: string): boolean {
+  return text.length <= 300 && LEADING_AD_DISCLOSURE_RE.test(text);
+}
+
+function isNavigationLikeBlock(block: cheerio.Cheerio<AnyNode>): boolean {
+  if (block.closest("nav, header, footer, [role='navigation']").length > 0) {
+    return true;
+  }
+
+  if (hasLinkDenseAncestor(block)) {
+    return true;
+  }
+
+  const attrs = [block.attr("class"), block.attr("id"), block.parent().attr("class"), block.parent().attr("id")]
+    .filter(Boolean)
+    .join(" ");
+  return NAVIGATION_BLOCK_RE.test(attrs);
+}
+
+function hasLinkDenseAncestor(block: cheerio.Cheerio<AnyNode>): boolean {
+  let current = block.parent();
+  for (let depth = 0; depth < 3 && current.length > 0; depth += 1) {
+    if (current.find("a").length > 8) {
+      return true;
+    }
+    current = current.parent();
+  }
+  return false;
+}
+
+function isBroadAdvertisingContainer(block: cheerio.Cheerio<AnyNode>, text: string): boolean {
+  return text.length > 700 || block.find("a").length > 8;
+}
+
+function isSubstantialAdvertisingCandidateText(text: string): boolean {
+  return text.length >= 16;
+}
+
+function normalizeAdvertisingTextKey(pageUrl: string, text: string): string {
+  return `${pageUrl}::${text.replace(/\s+/g, " ").trim().toLowerCase()}`;
 }
 
 function extractForeignOnlyConsumerInfoFacts(

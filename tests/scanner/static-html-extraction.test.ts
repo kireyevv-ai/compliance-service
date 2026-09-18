@@ -259,6 +259,53 @@ describe("static HTML fact extraction", () => {
     expect(hasFact(result, "advertiser_identity_or_link_found")).toBe(false);
   });
 
+  it.each([
+    ["service menu phrase", `<nav><a href="/features/social-ads">Реклама в соцсетях</a></nav>`],
+    ["product feature heading", `<section><h2>Инструменты для рекламы</h2><p>Настройте рассылки и кампании.</p></section>`],
+    [
+      "mega menu product text",
+      `<div class="mega-menu">CRM Маркетинг Сегментация базы клиентов, рассылка персональных предложений, реклама в соцсетях</div>`
+    ],
+    ["category navigation", `<div class="catalog-menu"><a>Акции</a><a>Распродажа</a><a>Реклама</a></div>`],
+    [
+      "large page container with ad label",
+      `<div><span>Реклама</span><a>Войти</a><a>Кешбэк до 15%</a><a>Книга в подарок</a><a>Экспресс-доставка</a><a>Сертификаты</a><p>Получайте кешбэк с каждой покупки и выбирайте книги из каталога.</p></div>`
+    ]
+  ])("does not confirm advertising from navigation or product text: %s", (_name, html) => {
+    const result = extractStaticFacts([page("https://shop.test/", html)], {
+      crawlCompleted: true,
+      startUrl: "https://shop.test/"
+    });
+
+    expect(values(result, "advertising_signal")).not.toContainEqual(
+      expect.objectContaining({ signal: "CONFIRMED" })
+    );
+    expect(hasFact(result, "ad_label_text_found")).toBe(false);
+  });
+
+  it("does not create an advertising candidate from a broad page wrapper with ordinary promo navigation", () => {
+    const links = Array.from({ length: 10 }, (_, index) => `<a>Акция ${index + 1}</a>`).join("");
+    const result = extractStaticFacts(
+      [page("https://shop.test/", `<div>${links}<p>Скидки и акции интернет-магазина</p></div>`)],
+      { crawlCompleted: true, startUrl: "https://shop.test/" }
+    );
+
+    expect(values(result, "advertising_signal")).not.toContainEqual(
+      expect.objectContaining({ signal: "CANDIDATE", found: true })
+    );
+  });
+
+  it("does not create an advertising candidate from a short generic promotions navigation label", () => {
+    const result = extractStaticFacts([page("https://shop.test/promotions", `<div>Все акции</div>`)], {
+      crawlCompleted: true,
+      startUrl: "https://shop.test/promotions"
+    });
+
+    expect(values(result, "advertising_signal")).not.toContainEqual(
+      expect.objectContaining({ signal: "CANDIDATE", found: true })
+    );
+  });
+
   it("classifies promotional discount blocks as CANDIDATE but not CONFIRMED", () => {
     const result = extractStaticFacts(
       [page("https://shop.test/", `<section>Скидка 20% на новую коллекцию до конца недели</section>`)],
@@ -271,6 +318,39 @@ describe("static HTML fact extraction", () => {
     expect(values(result, "advertising_signal")).not.toContainEqual(
       expect.objectContaining({ signal: "CONFIRMED" })
     );
+  });
+
+  it("deduplicates the same nested promotional candidate block", () => {
+    const result = extractStaticFacts(
+      [
+        page(
+          "https://shop.test/",
+          `<section><div><div>Скидка 20% на новую коллекцию до конца недели</div></div></section>`
+        )
+      ],
+      { crawlCompleted: true, startUrl: "https://shop.test/" }
+    );
+
+    expect(values(result, "advertising_signal").filter((value) => value.signal === "CANDIDATE")).toHaveLength(1);
+  });
+
+  it("does not bind an ad label from one block to a different promotional candidate block", () => {
+    const result = extractStaticFacts(
+      [
+        page(
+          "https://shop.test/",
+          `
+            <section>Реклама</section>
+            <section>Скидка 20% на новую коллекцию</section>
+          `
+        )
+      ],
+      { crawlCompleted: true, startUrl: "https://shop.test/" }
+    );
+    const labelBlockIds = values(result, "ad_label_text_found").map((value) => value.blockId);
+    const candidate = values(result, "advertising_signal").find((value) => value.signal === "CANDIDATE")!;
+
+    expect(labelBlockIds).not.toContain(candidate.blockId);
   });
 
   it("does not classify ordinary product cards as confirmed advertising", () => {
