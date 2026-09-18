@@ -19,11 +19,13 @@ type PageSignals = {
   hasOfferLink: boolean;
   hasRublePrice: boolean;
   hasMarketingSubscription: boolean;
+  advertisingSignal: AdvertisingSignal;
   recommendationSignal: RecommendationTechnologySignal;
   hasRecommendationNotice: boolean;
   hasRecommendationRulesDocument: boolean;
 };
 
+type AdvertisingSignal = "NONE" | "CANDIDATE" | "CONFIRMED";
 type RecommendationTechnologySignal = "NONE" | "SUSPECTED" | "CONFIRMED";
 
 type TextCandidate = {
@@ -64,6 +66,10 @@ const RECOMMENDATION_CONFIRMED_RE =
   /(использ(?:уем|уются|ование)\s+рекомендательн(?:ых|ые)\s+технолог|примен(?:яем|яются|ение)\s+рекомендательн(?:ых|ые)\s+технолог|на\s+сайте\s+работают\s+рекомендательн(?:ые|ых)\s+технолог|recommendation\s+technolog(?:y|ies)\s+(?:are\s+used|used|notice))/i;
 const RECOMMENDATION_SUSPECTED_RE =
   /(вам\s+может\s+понравиться|похожие\s+(?:товары|услуги|материалы)|персональн(?:ая|ые|ый|ую)\s+(?:подборк|рекомендац)|рекоменд(?:уем|ации)\s+(?:для\s+вас|подобраны)|recommend(?:ed|ations?)\s+for\s+you|you\s+may\s+also\s+like)/i;
+const AD_LABEL_RE = /(?:^|[\s([{])(?:реклама|advertisement|advertising|ad)(?:[\s:.)\]}]|$)/i;
+const AD_CANDIDATE_RE = /(скидк|акци[яи]|спецпредлож|промокод|баннер|новый\s+товар|купить\s+со\s+скидк|sale|discount|special\s+offer|promo\s+code)/i;
+const ERID_RE = /(?:erid|ерид|идентификатор\s+рекламы)\s*[:№#-]?\s*[a-zа-я0-9._-]{6,}/i;
+const ADVERTISER_RE = /(?:рекламодатель|advertiser)\s*[:—-]\s*[^\n.]{3,120}/i;
 const DOCUMENT_EXT_RE = /\.(pdf|doc|docx)(?:[?#].*)?$/i;
 const RUB_PRICE_RE = /((?:\d{1,3}(?:[\s\u00a0]\d{3})+|\d+)(?:[,.]\d{1,2})?)\s*(₽|руб\.?|рублей|RUB)(?=$|[\s.,;:!?<])/giu;
 const FOREIGN_PRICE_RE = /((?:\d{1,3}(?:[\s\u00a0]\d{3})+|\d+)(?:[,.]\d{1,2})?)\s*(\$|€|USD|EUR)(?=$|[\s.,;:!?<])/giu;
@@ -102,6 +108,7 @@ export function extractStaticFacts(
       hasOfferLink: false,
       hasRublePrice: false,
       hasMarketingSubscription: false,
+      advertisingSignal: "NONE",
       recommendationSignal: "NONE",
       hasRecommendationNotice: false,
       hasRecommendationRulesDocument: false
@@ -141,6 +148,7 @@ export function extractStaticFacts(
     }
 
     extractFormFacts($, page, facts, pageSignals);
+    extractAdvertisingFacts($, page, facts, pageSignals);
     extractRecommendationTechnologyFacts($, page, facts, pageSignals);
     extractConsumerPageTextFacts($, page, facts, pageRecommendationRulesLinks.map((link) => link.url));
     extractSellerFacts($, page.url, sellerCandidates);
@@ -396,6 +404,83 @@ function extractConsumerPageTextFacts(
       evidence: [textEvidence(page.url, { kind: "recommendation_rules_text", text, sourceUrl: page.url, ...completeness })]
     });
   }
+}
+
+function extractAdvertisingFacts(
+  $: cheerio.CheerioAPI,
+  page: CrawledPage,
+  facts: ExtractedFact[],
+  pageSignals: PageSignals
+): void {
+  $("section, article, aside, div, a").each((index, element) => {
+    const block = $(element);
+    const text = compactText(block.text(), 900);
+    if (!text || text.length < 8) {
+      return;
+    }
+
+    const explicitFixture = block.attr("data-ad-confirmed") === "true";
+    const labelFound = explicitFixture || AD_LABEL_RE.test(text);
+    const eridFound = ERID_RE.test(text);
+    const advertiserFound = ADVERTISER_RE.test(text);
+    const candidateFound = AD_CANDIDATE_RE.test(text) || block.attr("data-ad-candidate") === "true";
+    const signal: AdvertisingSignal = labelFound || eridFound || advertiserFound ? "CONFIRMED" : candidateFound ? "CANDIDATE" : "NONE";
+    if (signal === "NONE") {
+      return;
+    }
+
+    const selector = `${element.tagName.toLowerCase()}:eq(${index})`;
+    const blockId = `ad-${index}-${stableHash(text)}`;
+    const context = compactText(text, 500);
+    const evidence = textEvidence(page.url, {
+      kind: "advertising_signal",
+      selector,
+      blockId,
+      signal,
+      reason: signal === "CONFIRMED" ? "EXPLICIT_AD_EVIDENCE" : "PROMOTIONAL_BLOCK_CANDIDATE",
+      context,
+      fragment: compactText($.html(element), 900)
+    });
+
+    pageSignals.advertisingSignal = signal === "CONFIRMED" ? "CONFIRMED" : pageSignals.advertisingSignal === "CONFIRMED" ? "CONFIRMED" : "CANDIDATE";
+    facts.push({
+      pageUrl: page.url,
+      factType: "advertising_signal",
+      value: { signal, found: true, blockId, selector, reason: signal === "CONFIRMED" ? "EXPLICIT_AD_EVIDENCE" : "PROMOTIONAL_BLOCK_CANDIDATE" },
+      evidence: [evidence]
+    });
+    facts.push({
+      pageUrl: page.url,
+      factType: "ad_candidate_detected",
+      value: { found: true, blockId, selector, signal },
+      evidence: [evidence]
+    });
+
+    if (labelFound) {
+      facts.push({
+        pageUrl: page.url,
+        factType: "ad_label_text_found",
+        value: { found: true, blockId, selector },
+        evidence: [textEvidence(page.url, { kind: "ad_label_text_found", selector, blockId, context })]
+      });
+    }
+    if (advertiserFound) {
+      facts.push({
+        pageUrl: page.url,
+        factType: "advertiser_identity_or_link_found",
+        value: { found: true, blockId, selector },
+        evidence: [textEvidence(page.url, { kind: "advertiser_identity_or_link_found", selector, blockId, context: nearby(text, firstMatch(text, ADVERTISER_RE) ?? text) })]
+      });
+    }
+    if (eridFound) {
+      facts.push({
+        pageUrl: page.url,
+        factType: "erid_token_candidate",
+        value: { found: true, blockId, selector },
+        evidence: [textEvidence(page.url, { kind: "erid_token_candidate", selector, blockId, context: nearby(text, firstMatch(text, ERID_RE) ?? text) })]
+      });
+    }
+  });
 }
 
 function extractRecommendationTechnologyFacts(
@@ -729,6 +814,8 @@ function pushCoverageAndCompletedAggregates(
   const anyPersonalData = collected.pageSignals.some((signal) => signal.hasPersonalDataCollection);
   const anyMarketing = collected.pageSignals.some((signal) => signal.hasMarketingSubscription);
   const anyRublePrice = collected.pageSignals.some((signal) => signal.hasRublePrice);
+  const anyAdvertisingConfirmed = collected.pageSignals.some((signal) => signal.advertisingSignal === "CONFIRMED");
+  const anyAdvertisingCandidate = collected.pageSignals.some((signal) => signal.advertisingSignal === "CANDIDATE");
   const anyRecommendationConfirmed = collected.pageSignals.some((signal) => signal.recommendationSignal === "CONFIRMED");
   const anyRecommendationSuspected = collected.pageSignals.some((signal) => signal.recommendationSignal === "SUSPECTED");
   const anyRecommendationNotice = collected.pageSignals.some((signal) => signal.hasRecommendationNotice);
@@ -736,6 +823,10 @@ function pushCoverageAndCompletedAggregates(
   facts.push(siteBooleanFact("personal_data_collection_found", anyPersonalData, evidencePageUrl, pages.length));
   facts.push(siteBooleanFact("marketing_subscription_detected", anyMarketing, evidencePageUrl, pages.length));
   facts.push(siteBooleanFact("ruble_price_found", anyRublePrice, evidencePageUrl, pages.length));
+  const advertisingCoverageSufficient = successfulHtmlPages > 0 && !options.maxPagesReached;
+  if (advertisingCoverageSufficient && !anyAdvertisingConfirmed && !anyAdvertisingCandidate) {
+    facts.push(advertisingSignalFact(evidencePageUrl, "NONE", "NO_ADVERTISING_SIGNALS", "По проверенным страницам признаки рекламных блоков не обнаружены."));
+  }
   const recommendationCoverageSufficient = successfulHtmlPages > 0 && !options.maxPagesReached;
   if (recommendationCoverageSufficient && !anyRecommendationConfirmed && !anyRecommendationSuspected) {
     facts.push(recommendationSignalFact(evidencePageUrl, "NONE", "No recommendation technology signals were found in the completed static crawl."));
@@ -830,6 +921,20 @@ function siteBooleanFact(
         context: `Site-level static aggregate after complete crawl. found=${found}; pagesChecked=${pagesChecked}.`
       })
     ]
+  };
+}
+
+function advertisingSignalFact(
+  pageUrl: string,
+  signal: AdvertisingSignal,
+  reason: string,
+  context: string
+): ExtractedFact {
+  return {
+    pageUrl,
+    factType: "advertising_signal",
+    value: { signal, found: signal !== "NONE", reason },
+    evidence: [textEvidence(pageUrl, { kind: "advertising_signal", signal, reason, context })]
   };
 }
 
@@ -1017,6 +1122,14 @@ function nearby(text: string, needle: string, radius = 180): string {
 
 function firstMatch(text: string, pattern: RegExp): string | undefined {
   return text.match(pattern)?.[0];
+}
+
+function stableHash(value: string): string {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+  }
+  return hash.toString(36);
 }
 
 function compactText(value: string, max = 500): string {

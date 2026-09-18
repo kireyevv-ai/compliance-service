@@ -34,8 +34,10 @@ const AUTH_SIGNAL_FACTS = new Set([
 ]);
 
 const AD_SIGNAL_FACTS = new Set([
+  "advertising_signal",
   "ad_candidate_detected",
   "ad_label_text_found",
+  "advertiser_identity_or_link_found",
   "erid_token_candidate"
 ]);
 
@@ -149,7 +151,7 @@ export function getOwnerQuestionApplicability(
         ? "REQUIRED"
         : "UNRESOLVED";
     case "Q_AD_MATERIAL_QUALIFICATION":
-      return hasPositiveFact(context.facts, AD_SIGNAL_FACTS) ? "REQUIRED" : "UNRESOLVED";
+      return advertisingQuestionApplicability(context.facts);
     case "Q_AUTH_OWNER_STATUS":
       return hasAnyFact(context.facts, AUTH_SIGNAL_FACTS) ? "REQUIRED" : "NOT_NEEDED";
     case "Q_AUTH_METHODS":
@@ -299,31 +301,42 @@ function evaluateRknNotification(context: OwnerContextInput): OwnerRuleEvaluatio
 
 function evaluateAdRule(ruleId: string, missingFactType: string, context: OwnerContextInput): OwnerRuleEvaluation {
   const questionIds = ["Q_AD_MATERIAL_QUALIFICATION"];
+  const answer = answerFor(context, "Q_AD_MATERIAL_QUALIFICATION");
+  const confirmedByOwner = answer && !("unknown" in answer.answer) && singleOption(answer.answer) === "IS_INTERNET_AD";
   const applicability = getOwnerQuestionApplicability("Q_AD_MATERIAL_QUALIFICATION", context);
-  if (applicability !== "REQUIRED") {
+  if (applicability !== "REQUIRED" && !confirmedByOwner) {
     return applicabilityResult(ruleId, questionIds, applicability);
   }
 
-  const answer = answerFor(context, "Q_AD_MATERIAL_QUALIFICATION");
   const siteRefs = refs(context.facts, AD_SIGNAL_FACTS);
-  if (!answer) {
+  const confirmedBlockIds = confirmedAdvertisingBlockIds(context.facts);
+  const confirmedBySite = confirmedBlockIds.size > 0 || hasConfirmedAdvertisingSignal(context.facts);
+
+  if (!answer && !confirmedBySite) {
     return answerRequired(ruleId, questionIds);
   }
-  if ("unknown" in answer.answer) {
+  if (answer && "unknown" in answer.answer) {
     return manual(ruleId, questionIds, "OWNER_UNKNOWN", answer.answer, siteRefs);
   }
 
-  const option = singleOption(answer.answer);
-  if (option === "NOT_AD" && hasPositiveFact(context.facts, new Set(["ad_label_text_found", "erid_token_candidate"]))) {
-    return conflict(ruleId, questionIds, answer.answer, siteRefs);
+  if (answer && !("unknown" in answer.answer)) {
+    const option = singleOption(answer.answer);
+    if (option === "NOT_AD" && confirmedBySite) {
+      return conflict(ruleId, questionIds, answer.answer, siteRefs);
+    }
+    if (option === "NOT_AD") {
+      return evaluated(ruleId, questionIds, "NOT_APPLICABLE", answer.answer, siteRefs, "Владелец указал, что отмеченный блок не является интернет-рекламой.");
+    }
   }
-  if (option === "NOT_AD") {
-    return evaluated(ruleId, questionIds, "NOT_APPLICABLE", answer.answer, siteRefs, "Владелец указал, что отмеченный блок не является интернет-рекламой.");
+
+  const ownerAnswer = answer?.answer ?? { type: "SINGLE_SELECT" as const, optionId: "IS_INTERNET_AD" };
+  if (hasBlockBoundSupport(context.facts, missingFactType, confirmedBlockIds)) {
+    return evaluated(ruleId, questionIds, "PASS", ownerAnswer, siteRefs, "Для подтверждённого рекламного блока найден требуемый связанный признак.");
   }
-  if (ruleId === "ADV-003" || hasPositiveFalseFact(context.facts, missingFactType)) {
-    return manual(ruleId, questionIds, "RULE_POLICY_REQUIRES_MANUAL_CHECK", answer.answer, siteRefs);
+  if (hasPositiveFalseFact(context.facts, missingFactType) || confirmedBySite || confirmedByOwner) {
+    return manual(ruleId, questionIds, "RULE_POLICY_REQUIRES_MANUAL_CHECK", ownerAnswer, siteRefs);
   }
-  return evaluated(ruleId, questionIds, "UNRESOLVED", answer.answer, siteRefs, "Нужен отдельный detector для недостающих признаков рекламной маркировки.");
+  return answerRequired(ruleId, questionIds);
 }
 
 function evaluateAuth(context: OwnerContextInput): OwnerRuleEvaluation {
@@ -463,6 +476,19 @@ function authMethodsApplicability(context: OwnerContextInput): OwnerApplicabilit
   return singleOption(ownerAnswer.answer) === "RUSSIAN_OWNER" ? "REQUIRED" : "NOT_NEEDED";
 }
 
+function advertisingQuestionApplicability(facts: Fact[]): OwnerApplicabilityStatus {
+  if (hasPositiveFact(facts, new Set(["ad_candidate_detected", "ad_label_text_found", "advertiser_identity_or_link_found", "erid_token_candidate"]))) {
+    return "REQUIRED";
+  }
+  if (facts.some((fact) => fact.factType === "advertising_signal" && (fact.value.signal === "CONFIRMED" || fact.value.signal === "CANDIDATE"))) {
+    return "REQUIRED";
+  }
+  if (facts.some((fact) => fact.factType === "advertising_signal" && fact.value.signal === "NONE")) {
+    return "NOT_NEEDED";
+  }
+  return "UNRESOLVED";
+}
+
 function recommenderQuestionApplicability(facts: Fact[]): OwnerApplicabilityStatus {
   if (hasPositiveFact(facts, new Set(["recommendation_technology_suspected", "recommendation_technology_confirmed"]))) {
     return "REQUIRED";
@@ -519,6 +545,40 @@ function hasConfirmedRecommendationTechnology(facts: Fact[]): boolean {
       (fact.factType === "recommendation_technology_confirmed" && factIsPositive(fact)) ||
       (fact.factType === "recommendation_technology_signal" && fact.value.signal === "CONFIRMED")
   );
+}
+
+function hasConfirmedAdvertisingSignal(facts: Fact[]): boolean {
+  return facts.some(
+    (fact) =>
+      (fact.factType === "advertising_signal" && fact.value.signal === "CONFIRMED") ||
+      ((fact.factType === "ad_label_text_found" || fact.factType === "erid_token_candidate") && factIsPositive(fact))
+  );
+}
+
+function confirmedAdvertisingBlockIds(facts: Fact[]): Set<string> {
+  return new Set(
+    facts
+      .filter(
+        (fact) =>
+          (fact.factType === "advertising_signal" && fact.value.signal === "CONFIRMED") ||
+          ((fact.factType === "ad_label_text_found" || fact.factType === "erid_token_candidate") && factIsPositive(fact))
+      )
+      .map((fact) => (typeof fact.value.blockId === "string" ? fact.value.blockId : undefined))
+      .filter((value): value is string => Boolean(value))
+  );
+}
+
+function hasBlockBoundSupport(facts: Fact[], factType: string, blockIds: Set<string>): boolean {
+  const supportingBlockIds = new Set(
+    facts
+      .filter((fact) => fact.factType === factType && factIsPositive(fact))
+      .map((fact) => (typeof fact.value.blockId === "string" ? fact.value.blockId : undefined))
+      .filter((value): value is string => Boolean(value))
+  );
+  if (blockIds.size > 0) {
+    return [...blockIds].every((blockId) => supportingBlockIds.has(blockId));
+  }
+  return facts.some((fact) => fact.factType === factType && factIsPositive(fact));
 }
 
 function recommenderSupportingFactTypes(factType: string): Set<string> {

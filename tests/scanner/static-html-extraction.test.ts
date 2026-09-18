@@ -201,6 +201,108 @@ describe("static HTML fact extraction", () => {
     expect(hasFact(result, "recommendation_technology_confirmed")).toBe(false);
   });
 
+  it("classifies explicit advertising blocks as CONFIRMED with block-bound label, advertiser, and ERID", () => {
+    const result = extractStaticFacts(
+      [
+        page(
+          "https://shop.test/",
+          `<section data-ad-confirmed="true">Реклама: зимняя распродажа. Рекламодатель: ООО Ромашка. erid: abcdef123456</section>`
+        )
+      ],
+      { crawlCompleted: true, startUrl: "https://shop.test/" }
+    );
+    const confirmed = values(result, "advertising_signal").find((value) => value.signal === "CONFIRMED")!;
+    const blockId = String(confirmed.blockId);
+
+    expect(confirmed).toMatchObject({ signal: "CONFIRMED", found: true });
+    expect(values(result, "ad_label_text_found")).toContainEqual(expect.objectContaining({ blockId }));
+    expect(values(result, "advertiser_identity_or_link_found")).toContainEqual(expect.objectContaining({ blockId }));
+    expect(values(result, "erid_token_candidate")).toContainEqual(expect.objectContaining({ blockId }));
+  });
+
+  it.each([
+    ["fixture metadata", `<section data-ad-confirmed="true">Промо-блок партнёра</section>`],
+    ["ad label", `<section>Реклама: зимняя коллекция</section>`],
+    ["bound ERID", `<section>Специальное предложение. erid: abcdef123456</section>`],
+    ["explicit advertiser disclosure", `<section>Спецпредложение месяца. Рекламодатель: ООО Ромашка</section>`]
+  ])("confirms advertising from %s", (_name, html) => {
+    const result = extractStaticFacts([page("https://shop.test/", html)], {
+      crawlCompleted: true,
+      startUrl: "https://shop.test/"
+    });
+
+    expect(values(result, "advertising_signal")).toContainEqual(
+      expect.objectContaining({ signal: "CONFIRMED", found: true })
+    );
+  });
+
+  it("does not confirm advertising from ordinary company, seller, vendor, or brand information", () => {
+    const result = extractStaticFacts(
+      [
+        page(
+          "https://shop.test/",
+          `
+            <section>Скидка 20% на чайники. Бренд: Acme. Производитель: ООО Техника. Продавец: ООО Магазин.</section>
+            <section><a href="/company">О компании Acme</a></section>
+          `
+        )
+      ],
+      { crawlCompleted: true, startUrl: "https://shop.test/" }
+    );
+
+    expect(values(result, "advertising_signal")).toContainEqual(
+      expect.objectContaining({ signal: "CANDIDATE", found: true })
+    );
+    expect(values(result, "advertising_signal")).not.toContainEqual(
+      expect.objectContaining({ signal: "CONFIRMED" })
+    );
+    expect(hasFact(result, "advertiser_identity_or_link_found")).toBe(false);
+  });
+
+  it("classifies promotional discount blocks as CANDIDATE but not CONFIRMED", () => {
+    const result = extractStaticFacts(
+      [page("https://shop.test/", `<section>Скидка 20% на новую коллекцию до конца недели</section>`)],
+      { crawlCompleted: true, startUrl: "https://shop.test/" }
+    );
+
+    expect(values(result, "advertising_signal")).toContainEqual(
+      expect.objectContaining({ signal: "CANDIDATE", found: true })
+    );
+    expect(values(result, "advertising_signal")).not.toContainEqual(
+      expect.objectContaining({ signal: "CONFIRMED" })
+    );
+  });
+
+  it("does not classify ordinary product cards as confirmed advertising", () => {
+    const result = extractStaticFacts(
+      [page("https://shop.test/", `<article><h2>Чайник электрический</h2><p>Цена 2500 руб.</p><button>Купить</button></article>`)],
+      { crawlCompleted: true, startUrl: "https://shop.test/" }
+    );
+
+    expect(values(result, "advertising_signal")).toContainEqual(
+      expect.objectContaining({ signal: "NONE", found: false })
+    );
+    expect(values(result, "advertising_signal")).not.toContainEqual(
+      expect.objectContaining({ signal: "CONFIRMED" })
+    );
+  });
+
+  it("does not create advertising NONE when crawl coverage is insufficient", () => {
+    const partialCrawl = extractStaticFacts(
+      [page("https://shop.test/", `<main>Каталог</main>`)],
+      { crawlCompleted: false, startUrl: "https://shop.test/" }
+    );
+    const contentLimited = extractStaticFacts(
+      [{ ...page("https://shop.test/", `<main>Access denied</main>`), status: 403, contentLimited: true }],
+      { crawlCompleted: true, startUrl: "https://shop.test/" }
+    );
+    const zeroPages = extractStaticFacts([], { crawlCompleted: true, startUrl: "https://shop.test/" });
+
+    for (const result of [partialCrawl, contentLimited, zeroPages]) {
+      expect(values(result, "advertising_signal")).not.toContainEqual(expect.objectContaining({ signal: "NONE" }));
+    }
+  });
+
   it("does not create recommendation NONE when crawl coverage is insufficient", () => {
     const zeroPages = extractStaticFacts([], { crawlCompleted: true, startUrl: "https://shop.test/" });
     const partialCrawl = extractStaticFacts(

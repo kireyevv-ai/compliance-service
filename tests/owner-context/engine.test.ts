@@ -730,6 +730,78 @@ describe("owner context engine", () => {
     expect(evaluation.siteEvidenceRefs.length).toBeGreaterThan(0);
   });
 
+  it("does not treat candidate-only advertising as owner/site conflict when owner says it is not an ad", () => {
+    const evaluation = evaluationFor(
+      evaluateOwnerRules(
+        context({
+          facts: [fact("advertising_signal", { signal: "CANDIDATE", found: true, blockId: "ad-1" })],
+          answers: [
+            answer("Q_AD_MATERIAL_QUALIFICATION", {
+              type: "SINGLE_SELECT",
+              optionId: "NOT_AD"
+            })
+          ]
+        })
+      ),
+      "ADV-001"
+    );
+
+    expect(evaluation.status).toBe("NOT_APPLICABLE");
+    expect(evaluation.conflictDetected).toBe(false);
+  });
+
+  it("uses only same-block advertising label, advertiser, and ERID evidence", () => {
+    const sameBlock = evaluateOwnerRules(
+      context({
+        facts: [
+          fact("advertising_signal", { signal: "CONFIRMED", found: true, blockId: "ad-main" }),
+          fact("ad_label_text_found", { found: true, blockId: "ad-main" }),
+          fact("advertiser_identity_or_link_found", { found: true, blockId: "ad-main" }),
+          fact("erid_token_candidate", { found: true, blockId: "ad-main" })
+        ],
+        answers: []
+      })
+    );
+
+    expect(evaluationFor(sameBlock, "ADV-001").status).toBe("PASS");
+    expect(evaluationFor(sameBlock, "ADV-002").status).toBe("PASS");
+    expect(evaluationFor(sameBlock, "ADV-003").status).toBe("PASS");
+
+    const otherBlock = evaluateOwnerRules(
+      context({
+        facts: [
+          fact("advertising_signal", { signal: "CONFIRMED", found: true, blockId: "ad-main" }),
+          fact("ad_label_text_found", { found: true, blockId: "ad-other" }),
+          fact("advertiser_identity_or_link_found", { found: true, blockId: "ad-other" }),
+          fact("erid_token_candidate", { found: true, blockId: "ad-other" })
+        ],
+        answers: []
+      })
+    );
+
+    expect(evaluationFor(otherBlock, "ADV-001")).toMatchObject({
+      status: "MANUAL_CHECK",
+      reasonCode: "RULE_POLICY_REQUIRES_MANUAL_CHECK"
+    });
+    expect(evaluationFor(otherBlock, "ADV-002")).toMatchObject({
+      status: "MANUAL_CHECK",
+      reasonCode: "RULE_POLICY_REQUIRES_MANUAL_CHECK"
+    });
+    expect(evaluationFor(otherBlock, "ADV-003")).toMatchObject({
+      status: "MANUAL_CHECK",
+      reasonCode: "RULE_POLICY_REQUIRES_MANUAL_CHECK"
+    });
+  });
+
+  it("does not ask ad qualification when completed scan found no advertising signal", () => {
+    const scanContext = context({
+      facts: [fact("advertising_signal", { signal: "NONE", found: false })]
+    });
+
+    expect(getOwnerQuestionApplicability("Q_AD_MATERIAL_QUALIFICATION", scanContext)).toBe("NOT_NEEDED");
+    expect(getRequiredOwnerQuestions(scanContext)).not.toContain("Q_AD_MATERIAL_QUALIFICATION");
+  });
+
   it("does not treat suspected recommendation UI as owner/site conflict when owner says no", () => {
     const evaluation = evaluationFor(
       evaluateOwnerRules(
