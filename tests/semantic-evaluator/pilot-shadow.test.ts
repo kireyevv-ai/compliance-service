@@ -598,6 +598,45 @@ describe("pilot semantic rules shadow mode", () => {
     expect(provider.requests).toHaveLength(0);
   });
 
+  it("keeps REC-003 at MANUAL_CHECK when a rules document link exists but text is unavailable", async () => {
+    const provider = goldenProvider();
+    const documentLink = structuredFixture("rec003-document-link", "recommendation_rules_document_link", {
+      found: true,
+      url: "https://example.test/recommendation-rules"
+    });
+
+    const [result] = await evaluateSemanticRulesShadow({
+      scan,
+      facts: [
+        factForDeterministic("recommendation_technology_confirmed", { found: true }),
+        documentLink.fact
+      ],
+      evidence: [documentLink.evidence],
+      rules: ruleOnly("REC-003"),
+      provider
+    });
+
+    expect(result.status).toBe("MANUAL_CHECK");
+    expect(result.result.status).toBe("MANUAL_CHECK");
+    expect(result.evidenceRefs).toEqual([`recommendation_rules_document_link:${documentLink.evidence.id}`]);
+    expect(provider.requests).toHaveLength(0);
+  });
+
+  it("does not invoke REC-003 when confirmed use exists but no rules document is found", async () => {
+    const provider = goldenProvider();
+
+    const [result] = await evaluateSemanticRulesShadow({
+      scan,
+      facts: [factForDeterministic("recommendation_technology_confirmed", { found: true })],
+      evidence: [],
+      rules: ruleOnly("REC-003"),
+      provider
+    });
+
+    expect(result.status).toBe("NO_EVALUATION");
+    expect(provider.requests).toHaveLength(0);
+  });
+
   it("keeps deterministic evaluation separate from semantic shadow mode", async () => {
     const deterministicEvaluations = evaluateRulesForScan({
       scan,

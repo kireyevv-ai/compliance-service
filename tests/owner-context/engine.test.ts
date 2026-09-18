@@ -697,19 +697,19 @@ describe("owner context engine", () => {
     ],
     [
       "REC-001",
-      [fact("recommendation_technology_suspected")],
+      [fact("recommendation_technology_confirmed")],
       answer("Q_RECOMMENDER_TECH_USE", { type: "SINGLE_SELECT", optionId: "NO_RECOMMENDER_TECH" }),
       undefined
     ],
     [
       "REC-002",
-      [fact("recommendation_technology_suspected")],
+      [fact("recommendation_technology_signal", { signal: "CONFIRMED", found: true })],
       answer("Q_RECOMMENDER_TECH_USE", { type: "SINGLE_SELECT", optionId: "BASIC_SORTING_ONLY" }),
       undefined
     ],
     [
       "REC-004",
-      [fact("recommendation_technology_suspected")],
+      [fact("recommendation_technology_confirmed")],
       answer("Q_RECOMMENDER_TECH_USE", { type: "SINGLE_SELECT", optionId: "NO_RECOMMENDER_TECH" }),
       undefined
     ]
@@ -728,6 +728,71 @@ describe("owner context engine", () => {
     expect(evaluation.reasonCode).toBe("OWNER_ANSWER_CONFLICTS_WITH_SITE_EVIDENCE");
     expect(evaluation.conflictDetected).toBe(true);
     expect(evaluation.siteEvidenceRefs.length).toBeGreaterThan(0);
+  });
+
+  it("does not treat suspected recommendation UI as owner/site conflict when owner says no", () => {
+    const evaluation = evaluationFor(
+      evaluateOwnerRules(
+        context({
+          facts: [fact("recommendation_technology_suspected")],
+          answers: [
+            answer("Q_RECOMMENDER_TECH_USE", {
+              type: "SINGLE_SELECT",
+              optionId: "NO_RECOMMENDER_TECH"
+            })
+          ]
+        })
+      ),
+      "REC-001"
+    );
+
+    expect(evaluation.status).toBe("NOT_APPLICABLE");
+    expect(evaluation.conflictDetected).toBe(false);
+  });
+
+  it("does not ask the recommender owner question when the completed scan found no recommendation signal", () => {
+    const scanContext = context({
+      facts: [fact("recommendation_technology_signal", { signal: "NONE", found: false })]
+    });
+
+    expect(getOwnerQuestionApplicability("Q_RECOMMENDER_TECH_USE", scanContext)).toBe("NOT_NEEDED");
+    expect(getRequiredOwnerQuestions(scanContext)).not.toContain("Q_RECOMMENDER_TECH_USE");
+  });
+
+  it("confirms recommender applicability from public site evidence without requiring owner answer", () => {
+    const result = evaluateOwnerRules(
+      context({
+        facts: [
+          fact("recommendation_technology_confirmed"),
+          fact("recommendation_notice_candidate", { found: false }),
+          fact("recommendation_rules_document_link", { found: false })
+        ],
+        answers: []
+      })
+    );
+
+    expect(evaluationFor(result, "REC-001")).toMatchObject({
+      status: "MANUAL_CHECK",
+      reasonCode: "RULE_POLICY_REQUIRES_MANUAL_CHECK"
+    });
+    expect(evaluationFor(result, "REC-002")).toMatchObject({
+      status: "MANUAL_CHECK",
+      reasonCode: "RULE_POLICY_REQUIRES_MANUAL_CHECK"
+    });
+  });
+
+  it("keeps REC-002 separate from REC-003 when a rules document exists", () => {
+    const evaluation = evaluationFor(
+      evaluateOwnerRules(
+        context({
+          facts: [fact("recommendation_technology_confirmed"), fact("recommendation_rules_document_link", { found: true })],
+          answers: []
+        })
+      ),
+      "REC-002"
+    );
+
+    expect(evaluation.status).toBe("PASS");
   });
 
   it("does not conflict PD-022 on foreign provider signal alone", () => {

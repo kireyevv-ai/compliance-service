@@ -19,7 +19,12 @@ type PageSignals = {
   hasOfferLink: boolean;
   hasRublePrice: boolean;
   hasMarketingSubscription: boolean;
+  recommendationSignal: RecommendationTechnologySignal;
+  hasRecommendationNotice: boolean;
+  hasRecommendationRulesDocument: boolean;
 };
+
+type RecommendationTechnologySignal = "NONE" | "SUSPECTED" | "CONFIRMED";
 
 type TextCandidate = {
   value: string;
@@ -55,6 +60,10 @@ const CONSUMER_TEXT_RE =
   /(претенз|жалоб|обращени|возврат|refund|return|claim|complaint|доставк|delivery|оплат|payment|услови|оферт|контакт|seller|продавец|исполнитель)/i;
 const RECOMMENDATION_RULES_RE =
   /(правил.*рекомендательн|рекомендательн.*технолог|recommendation.*rules|recommender.*rules|recommendation.*technology)/i;
+const RECOMMENDATION_CONFIRMED_RE =
+  /(использ(?:уем|уются|ование)\s+рекомендательн(?:ых|ые)\s+технолог|примен(?:яем|яются|ение)\s+рекомендательн(?:ых|ые)\s+технолог|на\s+сайте\s+работают\s+рекомендательн(?:ые|ых)\s+технолог|recommendation\s+technolog(?:y|ies)\s+(?:are\s+used|used|notice))/i;
+const RECOMMENDATION_SUSPECTED_RE =
+  /(вам\s+может\s+понравиться|похожие\s+(?:товары|услуги|материалы)|персональн(?:ая|ые|ый|ую)\s+(?:подборк|рекомендац)|рекоменд(?:уем|ации)\s+(?:для\s+вас|подобраны)|recommend(?:ed|ations?)\s+for\s+you|you\s+may\s+also\s+like)/i;
 const DOCUMENT_EXT_RE = /\.(pdf|doc|docx)(?:[?#].*)?$/i;
 const RUB_PRICE_RE = /((?:\d{1,3}(?:[\s\u00a0]\d{3})+|\d+)(?:[,.]\d{1,2})?)\s*(₽|руб\.?|рублей|RUB)(?=$|[\s.,;:!?<])/giu;
 const FOREIGN_PRICE_RE = /((?:\d{1,3}(?:[\s\u00a0]\d{3})+|\d+)(?:[,.]\d{1,2})?)\s*(\$|€|USD|EUR)(?=$|[\s.,;:!?<])/giu;
@@ -92,7 +101,10 @@ export function extractStaticFacts(
       hasPrivacyLink: false,
       hasOfferLink: false,
       hasRublePrice: false,
-      hasMarketingSubscription: false
+      hasMarketingSubscription: false,
+      recommendationSignal: "NONE",
+      hasRecommendationNotice: false,
+      hasRecommendationRulesDocument: false
     };
 
     const links = extractLinks($, page.url);
@@ -106,6 +118,7 @@ export function extractStaticFacts(
     documentLinks.push(...pageDocumentLinks);
     pageSignals.hasPrivacyLink = pagePrivacyLinks.length > 0;
     pageSignals.hasOfferLink = pageOfferLinks.length > 0;
+    pageSignals.hasRecommendationRulesDocument = pageRecommendationRulesLinks.length > 0;
 
     for (const link of pagePrivacyLinks) {
       facts.push(linkFact("privacy_policy_link_found", page.url, link, { found: true }));
@@ -128,6 +141,7 @@ export function extractStaticFacts(
     }
 
     extractFormFacts($, page, facts, pageSignals);
+    extractRecommendationTechnologyFacts($, page, facts, pageSignals);
     extractConsumerPageTextFacts($, page, facts, pageRecommendationRulesLinks.map((link) => link.url));
     extractSellerFacts($, page.url, sellerCandidates);
     extractPriceFacts($, page.url, facts, pageSignals);
@@ -366,9 +380,71 @@ function extractConsumerPageTextFacts(
   if (isRecommendationRulesPage) {
     facts.push({
       pageUrl: page.url,
+      factType: "recommendation_rules_document_link",
+      value: { found: true, url: page.url, documentKind: "HTML_PAGE" },
+      evidence: [
+        textEvidence(page.url, {
+          kind: "recommendation_rules_document_link",
+          context: nearby(text, firstMatch(text, RECOMMENDATION_RULES_RE) ?? "рекомендательные технологии")
+        })
+      ]
+    });
+    facts.push({
+      pageUrl: page.url,
       factType: "recommendation_rules_text",
       value: { text, sourceUrl: page.url, ...completeness },
       evidence: [textEvidence(page.url, { kind: "recommendation_rules_text", text, sourceUrl: page.url, ...completeness })]
+    });
+  }
+}
+
+function extractRecommendationTechnologyFacts(
+  $: cheerio.CheerioAPI,
+  page: CrawledPage,
+  facts: ExtractedFact[],
+  pageSignals: PageSignals
+): void {
+  const text = readablePageText($, 12_000);
+  if (!text) {
+    return;
+  }
+
+  const rulesMatch = firstMatch(text, RECOMMENDATION_RULES_RE);
+  const confirmedMatch = firstMatch(text, RECOMMENDATION_CONFIRMED_RE);
+  const suspectedMatch = firstMatch(text, RECOMMENDATION_SUSPECTED_RE);
+  if (rulesMatch || confirmedMatch) {
+    const context = nearby(text, rulesMatch ?? confirmedMatch ?? "рекомендательные технологии");
+    pageSignals.recommendationSignal = "CONFIRMED";
+    pageSignals.hasRecommendationNotice = Boolean(confirmedMatch);
+    pageSignals.hasRecommendationRulesDocument = pageSignals.hasRecommendationRulesDocument || Boolean(rulesMatch);
+
+    facts.push(recommendationSignalFact(page.url, "CONFIRMED", rulesMatch ? "RULES_DOCUMENT_TEXT" : "EXPLICIT_NOTICE", context));
+    facts.push({
+      pageUrl: page.url,
+      factType: "recommendation_technology_confirmed",
+      value: { found: true, reason: rulesMatch ? "RULES_DOCUMENT_TEXT" : "EXPLICIT_NOTICE" },
+      evidence: [textEvidence(page.url, { kind: "recommendation_technology_confirmed", context })]
+    });
+    if (confirmedMatch) {
+      facts.push({
+        pageUrl: page.url,
+        factType: "recommendation_notice_candidate",
+        value: { found: true, reason: "EXPLICIT_NOTICE" },
+        evidence: [textEvidence(page.url, { kind: "recommendation_notice_candidate", context })]
+      });
+    }
+    return;
+  }
+
+  if (suspectedMatch) {
+    const context = nearby(text, suspectedMatch);
+    pageSignals.recommendationSignal = "SUSPECTED";
+    facts.push(recommendationSignalFact(page.url, "SUSPECTED", "RECOMMENDATION_UI_TEXT", context));
+    facts.push({
+      pageUrl: page.url,
+      factType: "recommendation_technology_suspected",
+      value: { found: true, reason: "RECOMMENDATION_UI_TEXT" },
+      evidence: [textEvidence(page.url, { kind: "recommendation_technology_suspected", context })]
     });
   }
 }
@@ -653,9 +729,41 @@ function pushCoverageAndCompletedAggregates(
   const anyPersonalData = collected.pageSignals.some((signal) => signal.hasPersonalDataCollection);
   const anyMarketing = collected.pageSignals.some((signal) => signal.hasMarketingSubscription);
   const anyRublePrice = collected.pageSignals.some((signal) => signal.hasRublePrice);
+  const anyRecommendationConfirmed = collected.pageSignals.some((signal) => signal.recommendationSignal === "CONFIRMED");
+  const anyRecommendationSuspected = collected.pageSignals.some((signal) => signal.recommendationSignal === "SUSPECTED");
+  const anyRecommendationNotice = collected.pageSignals.some((signal) => signal.hasRecommendationNotice);
+  const anyRecommendationRulesDocument = collected.pageSignals.some((signal) => signal.hasRecommendationRulesDocument);
   facts.push(siteBooleanFact("personal_data_collection_found", anyPersonalData, evidencePageUrl, pages.length));
   facts.push(siteBooleanFact("marketing_subscription_detected", anyMarketing, evidencePageUrl, pages.length));
   facts.push(siteBooleanFact("ruble_price_found", anyRublePrice, evidencePageUrl, pages.length));
+  const recommendationCoverageSufficient = successfulHtmlPages > 0 && !options.maxPagesReached;
+  if (recommendationCoverageSufficient && !anyRecommendationConfirmed && !anyRecommendationSuspected) {
+    facts.push(recommendationSignalFact(evidencePageUrl, "NONE", "No recommendation technology signals were found in the completed static crawl."));
+  }
+  if (recommendationCoverageSufficient && anyRecommendationConfirmed) {
+    facts.push(
+      recommendationBooleanFact(
+        "recommendation_notice_candidate",
+        anyRecommendationNotice,
+        evidencePageUrl,
+        pages.length,
+        anyRecommendationNotice
+          ? "На сайте обнаружено уведомление о применении рекомендательных технологий."
+          : "На проверенных страницах не найдено отдельное уведомление о применении рекомендательных технологий."
+      )
+    );
+    facts.push(
+      recommendationBooleanFact(
+        "recommendation_rules_document_link",
+        anyRecommendationRulesDocument,
+        evidencePageUrl,
+        pages.length,
+        anyRecommendationRulesDocument
+          ? "На сайте обнаружена ссылка или страница с правилами применения рекомендательных технологий."
+          : "На проверенных страницах не найдены правила применения рекомендательных технологий."
+      )
+    );
+  }
 }
 
 function detectContentLimitation(pages: CrawledPage[]): ContentLimitation {
@@ -722,6 +830,41 @@ function siteBooleanFact(
         context: `Site-level static aggregate after complete crawl. found=${found}; pagesChecked=${pagesChecked}.`
       })
     ]
+  };
+}
+
+function recommendationSignalFact(
+  pageUrl: string,
+  signal: RecommendationTechnologySignal,
+  reason: string,
+  context?: string
+): ExtractedFact {
+  return {
+    pageUrl,
+    factType: "recommendation_technology_signal",
+    value: { signal, found: signal !== "NONE", reason },
+    evidence: [
+      textEvidence(pageUrl, {
+        kind: "recommendation_technology_signal",
+        signal,
+        reason,
+        context: context ?? "По проверенным страницам признаки рекомендательных технологий не обнаружены."
+      })
+    ]
+  };
+}
+
+function recommendationBooleanFact(
+  factType: "recommendation_notice_candidate" | "recommendation_rules_document_link",
+  found: boolean,
+  pageUrl: string,
+  pagesChecked: number,
+  context: string
+): ExtractedFact {
+  return {
+    factType,
+    value: { found, scope: "SITE", pagesChecked },
+    evidence: [textEvidence(pageUrl, { kind: factType, context })]
   };
 }
 
@@ -870,6 +1013,10 @@ function nearby(text: string, needle: string, radius = 180): string {
   }
 
   return compactText(text.slice(Math.max(0, index - radius), index + needle.length + radius), radius * 2);
+}
+
+function firstMatch(text: string, pattern: RegExp): string | undefined {
+  return text.match(pattern)?.[0];
 }
 
 function compactText(value: string, max = 500): string {

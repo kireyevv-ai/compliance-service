@@ -151,6 +151,97 @@ describe("static HTML fact extraction", () => {
     expect(JSON.stringify(pageDocumentLinks)).not.toContain("/catalog");
   });
 
+  it("classifies explicit recommendation technology notice as CONFIRMED", () => {
+    const result = extractStaticFacts(
+      [
+        page(
+          "https://shop.test/recommendations",
+          `<main>Мы используем рекомендательные технологии для подбора товаров. <a href="/recommendation-rules">Правила применения рекомендательных технологий</a></main>`
+        )
+      ],
+      { crawlCompleted: true, startUrl: "https://shop.test/recommendations" }
+    );
+
+    expect(values(result, "recommendation_technology_signal")).toContainEqual(
+      expect.objectContaining({ signal: "CONFIRMED", found: true })
+    );
+    expect(values(result, "recommendation_technology_confirmed")).toContainEqual(
+      expect.objectContaining({ found: true })
+    );
+    expect(values(result, "recommendation_notice_candidate")).toContainEqual(
+      expect.objectContaining({ found: true })
+    );
+    expect(values(result, "recommendation_rules_document_link")).toContainEqual(
+      expect.objectContaining({ found: true, url: "https://shop.test/recommendation-rules" })
+    );
+  });
+
+  it("classifies recommendation UI copy as SUSPECTED but not CONFIRMED", () => {
+    const result = extractStaticFacts(
+      [page("https://shop.test/product", `<section><h2>Вам может понравиться</h2><div class="carousel"></div></section>`)],
+      { crawlCompleted: true, startUrl: "https://shop.test/product" }
+    );
+
+    expect(values(result, "recommendation_technology_signal")).toContainEqual(
+      expect.objectContaining({ signal: "SUSPECTED", found: true })
+    );
+    expect(hasFact(result, "recommendation_technology_suspected")).toBe(true);
+    expect(hasFact(result, "recommendation_technology_confirmed")).toBe(false);
+  });
+
+  it("does not confirm recommendation technology from an ordinary carousel alone", () => {
+    const result = extractStaticFacts(
+      [page("https://shop.test/product", `<section class="carousel"><article>Товар 1</article></section>`)],
+      { crawlCompleted: true, startUrl: "https://shop.test/product" }
+    );
+
+    expect(values(result, "recommendation_technology_signal")).toContainEqual(
+      expect.objectContaining({ signal: "NONE", found: false })
+    );
+    expect(hasFact(result, "recommendation_technology_confirmed")).toBe(false);
+  });
+
+  it("does not create recommendation NONE when crawl coverage is insufficient", () => {
+    const zeroPages = extractStaticFacts([], { crawlCompleted: true, startUrl: "https://shop.test/" });
+    const partialCrawl = extractStaticFacts(
+      [page("https://shop.test/", `<main>Каталог товаров</main>`)],
+      { crawlCompleted: false, startUrl: "https://shop.test/" }
+    );
+    const maxPagesReached = extractStaticFacts(
+      [page("https://shop.test/", `<main>Каталог товаров</main>`)],
+      { crawlCompleted: true, startUrl: "https://shop.test/", maxPagesReached: true }
+    );
+    const contentLimited = extractStaticFacts(
+      [{ ...page("https://shop.test/", `<main>Access denied</main>`), status: 403, contentLimited: true }],
+      { crawlCompleted: true, startUrl: "https://shop.test/" }
+    );
+
+    for (const result of [zeroPages, partialCrawl, maxPagesReached, contentLimited]) {
+      expect(values(result, "recommendation_technology_signal")).not.toContainEqual(
+        expect.objectContaining({ signal: "NONE" })
+      );
+    }
+  });
+
+  it("uses rules text as confirmed recommendation technology evidence and REC-003 input", () => {
+    const result = extractStaticFacts(
+      [
+        page(
+          "https://shop.test/recommendation-rules",
+          `<h1>Правила применения рекомендательных технологий</h1><p>Документ доступен на русском языке.</p>`
+        )
+      ],
+      { crawlCompleted: true, startUrl: "https://shop.test/recommendation-rules" }
+    );
+
+    expect(values(result, "recommendation_technology_signal")).toContainEqual(
+      expect.objectContaining({ signal: "CONFIRMED", found: true })
+    );
+    expect(values(result, "recommendation_rules_text")[0]).toMatchObject({
+      text: expect.stringContaining("Правила применения рекомендательных технологий")
+    });
+  });
+
   it("detects general public offer links conservatively", () => {
     const result = extractStaticFacts(
       [

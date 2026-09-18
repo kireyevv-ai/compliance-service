@@ -40,7 +40,9 @@ const AD_SIGNAL_FACTS = new Set([
 ]);
 
 const RECOMMENDER_SIGNAL_FACTS = new Set([
+  "recommendation_technology_signal",
   "recommendation_technology_suspected",
+  "recommendation_technology_confirmed",
   "recommendation_notice_candidate",
   "recommendation_rules_document_link"
 ]);
@@ -153,7 +155,7 @@ export function getOwnerQuestionApplicability(
     case "Q_AUTH_METHODS":
       return authMethodsApplicability(context);
     case "Q_RECOMMENDER_TECH_USE":
-      return hasAnyFact(context.facts, RECOMMENDER_SIGNAL_FACTS) ? "REQUIRED" : "UNRESOLVED";
+      return recommenderQuestionApplicability(context.facts);
     case "Q_LANGUAGE_EXCEPTION":
       if (!["B2C_SERVICE", "ECOMMERCE"].includes(context.siteType)) {
         return "NOT_NEEDED";
@@ -372,31 +374,58 @@ function evaluateAuth(context: OwnerContextInput): OwnerRuleEvaluation {
 
 function evaluateRecommenderRule(ruleId: string, supportingFactType: string, context: OwnerContextInput): OwnerRuleEvaluation {
   const questionIds = ["Q_RECOMMENDER_TECH_USE"];
+  const answer = answerFor(context, "Q_RECOMMENDER_TECH_USE");
+  const confirmedByOwner =
+    answer && !("unknown" in answer.answer) && singleOption(answer.answer) === "USES_RECOMMENDER_TECH";
   const applicability = getOwnerQuestionApplicability("Q_RECOMMENDER_TECH_USE", context);
-  if (applicability !== "REQUIRED") {
+  if (applicability !== "REQUIRED" && !confirmedByOwner) {
     return applicabilityResult(ruleId, questionIds, applicability);
   }
 
-  const answer = answerFor(context, "Q_RECOMMENDER_TECH_USE");
   const siteRefs = refs(context.facts, RECOMMENDER_SIGNAL_FACTS);
-  if (!answer) {
+  const confirmedBySite = hasConfirmedRecommendationTechnology(context.facts);
+  const useConfirmed = confirmedBySite || confirmedByOwner;
+
+  if (!answer && !confirmedBySite) {
     return answerRequired(ruleId, questionIds);
   }
-  if ("unknown" in answer.answer) {
+  if (answer && "unknown" in answer.answer) {
     return manual(ruleId, questionIds, "OWNER_UNKNOWN", answer.answer, siteRefs);
   }
 
-  const option = singleOption(answer.answer);
-  if ((option === "NO_RECOMMENDER_TECH" || option === "BASIC_SORTING_ONLY") && hasPositiveFact(context.facts, RECOMMENDER_SIGNAL_FACTS)) {
-    return conflict(ruleId, questionIds, answer.answer, siteRefs);
+  if (answer && !("unknown" in answer.answer)) {
+    const option = singleOption(answer.answer);
+    if ((option === "NO_RECOMMENDER_TECH" || option === "BASIC_SORTING_ONLY") && confirmedBySite) {
+      return conflict(ruleId, questionIds, answer.answer, siteRefs);
+    }
+    if (option === "NO_RECOMMENDER_TECH" || option === "BASIC_SORTING_ONLY") {
+      return evaluated(ruleId, questionIds, "NOT_APPLICABLE", answer.answer, siteRefs, "Владелец указал, что рекомендательные технологии не используются.");
+    }
   }
-  if (option === "NO_RECOMMENDER_TECH" || option === "BASIC_SORTING_ONLY") {
-    return evaluated(ruleId, questionIds, "NOT_APPLICABLE", answer.answer, siteRefs, "Владелец указал, что рекомендательные технологии не используются.");
+
+  if (!useConfirmed) {
+    return answerRequired(ruleId, questionIds);
   }
   if (hasPositiveFalseFact(context.facts, supportingFactType)) {
-    return manual(ruleId, questionIds, "RULE_POLICY_REQUIRES_MANUAL_CHECK", answer.answer, siteRefs);
+    return manual(ruleId, questionIds, "RULE_POLICY_REQUIRES_MANUAL_CHECK", answer?.answer ?? { type: "SINGLE_SELECT", optionId: "USES_RECOMMENDER_TECH" }, siteRefs);
   }
-  return evaluated(ruleId, questionIds, "UNRESOLVED", answer.answer, siteRefs, "Нужны detector/document facts для финальной оценки правила.");
+  if (hasPositiveFact(context.facts, recommenderSupportingFactTypes(supportingFactType))) {
+    return evaluated(
+      ruleId,
+      questionIds,
+      "PASS",
+      answer?.answer ?? { type: "SINGLE_SELECT", optionId: "USES_RECOMMENDER_TECH" },
+      siteRefs,
+      "На сайте найден публичный признак выполнения требования по рекомендательным технологиям."
+    );
+  }
+  return manual(
+    ruleId,
+    questionIds,
+    "RULE_POLICY_REQUIRES_MANUAL_CHECK",
+    answer?.answer ?? { type: "SINGLE_SELECT", optionId: "USES_RECOMMENDER_TECH" },
+    siteRefs
+  );
 }
 
 function evaluateLanguageException(context: OwnerContextInput): OwnerRuleEvaluation {
@@ -434,6 +463,22 @@ function authMethodsApplicability(context: OwnerContextInput): OwnerApplicabilit
   return singleOption(ownerAnswer.answer) === "RUSSIAN_OWNER" ? "REQUIRED" : "NOT_NEEDED";
 }
 
+function recommenderQuestionApplicability(facts: Fact[]): OwnerApplicabilityStatus {
+  if (hasPositiveFact(facts, new Set(["recommendation_technology_suspected", "recommendation_technology_confirmed"]))) {
+    return "REQUIRED";
+  }
+  if (facts.some((fact) => fact.factType === "recommendation_technology_signal" && fact.value.signal === "CONFIRMED")) {
+    return "REQUIRED";
+  }
+  if (facts.some((fact) => fact.factType === "recommendation_technology_signal" && fact.value.signal === "SUSPECTED")) {
+    return "REQUIRED";
+  }
+  if (facts.some((fact) => fact.factType === "recommendation_technology_signal" && fact.value.signal === "NONE")) {
+    return "NOT_NEEDED";
+  }
+  return "UNRESOLVED";
+}
+
 function answerFor(context: OwnerContextInput, questionId: string, contextKey = ""): OwnerAnswer | undefined {
   return context.answers.find((answer) => answer.questionId === questionId && (answer.contextKey ?? "") === contextKey);
 }
@@ -466,6 +511,21 @@ function hasPositiveFact(facts: Fact[], factTypes: Set<string>): boolean {
 
 function hasPositiveFalseFact(facts: Fact[], factType: string): boolean {
   return facts.some((fact) => fact.factType === factType && (fact.value.found === false || fact.value.detected === false));
+}
+
+function hasConfirmedRecommendationTechnology(facts: Fact[]): boolean {
+  return facts.some(
+    (fact) =>
+      (fact.factType === "recommendation_technology_confirmed" && factIsPositive(fact)) ||
+      (fact.factType === "recommendation_technology_signal" && fact.value.signal === "CONFIRMED")
+  );
+}
+
+function recommenderSupportingFactTypes(factType: string): Set<string> {
+  if (factType === "recommendation_rules_document_link") {
+    return new Set(["recommendation_rules_document_link", "recommendation_rules_text"]);
+  }
+  return new Set([factType]);
 }
 
 function factIsPositive(fact: Fact): boolean {

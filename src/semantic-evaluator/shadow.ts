@@ -75,6 +75,11 @@ export async function evaluateSemanticRulesShadow(
 
     const evidencePackage = buildEvidencePackage(input.facts, input.evidence, evaluation.evidence_fact_types);
     if (evidencePackage.length === 0) {
+      const bridged = recommendationRulesDocumentAccessBridge(rule, input);
+      if (bridged) {
+        results.push(bridged);
+        continue;
+      }
       results.push(noShadowEvaluation(rule, "Required semantic evidence is missing."));
       continue;
     }
@@ -291,6 +296,49 @@ function hasNoThirdPartyTransferClaim(evidence: SemanticEvidenceExcerpt[]): bool
 
 function hasTruthyFact(facts: Fact[], factType: string): boolean {
   return facts.some((fact) => fact.factType === factType && fact.value.found === true);
+}
+
+function recommendationRulesDocumentAccessBridge(
+  rule: Rule,
+  input: EvaluateSemanticShadowRulesInput
+): SemanticShadowEvaluation | undefined {
+  if (rule.ruleId !== "REC-003") {
+    return undefined;
+  }
+  if (!hasTruthyFact(input.facts, "recommendation_technology_confirmed")) {
+    return undefined;
+  }
+
+  const documentFactIds = new Set(
+    input.facts
+      .filter((fact) => fact.factType === "recommendation_rules_document_link" && fact.value.found === true)
+      .map((fact) => fact.id)
+  );
+  if (documentFactIds.size === 0) {
+    return undefined;
+  }
+
+  const evidenceRefs = input.evidence
+    .filter((evidence) => evidence.factId && documentFactIds.has(evidence.factId))
+    .map((evidence) => `recommendation_rules_document_link:${evidence.id}`);
+
+  const result: SemanticEvaluation = {
+    status: "MANUAL_CHECK",
+    observation: "AMBIGUOUS",
+    confidence: 0.5,
+    reasonCode: "RECOMMENDATION_RULES_DOCUMENT_TEXT_UNAVAILABLE",
+    reason: "A recommendation-technology rules document link exists, but accessible rules text was not available for semantic evaluation.",
+    evidenceRefs
+  };
+
+  return {
+    ruleId: rule.ruleId,
+    ruleVersion: rule.version,
+    status: result.status,
+    criterion: rule.evaluation.kind === "SEMANTIC_CRITERION" ? rule.evaluation.criterion : "",
+    evidenceRefs,
+    result
+  };
 }
 
 function evidenceCompleteness(evidence: Evidence, fact: Fact): SemanticEvidenceCompleteness {
