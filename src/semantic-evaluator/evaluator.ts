@@ -125,6 +125,9 @@ export function mapObservationToStatus(
   }
 
   if (observation === "PRESENT") {
+    if (requiresPd019ManualCheck(input)) {
+      return "MANUAL_CHECK";
+    }
     return hasOnlyReferenceOnlyEvidence(input.evidence) ? "MANUAL_CHECK" : "PASS";
   }
 
@@ -135,6 +138,28 @@ export function mapObservationToStatus(
   return input.evidence.length > 0 && input.evidence.every((item) => item.completeness === "COMPLETE")
     ? "FAIL"
     : "MANUAL_CHECK";
+}
+
+function requiresPd019ManualCheck(input: Pick<SemanticEvaluationInput, "evidence" | "ruleId">): boolean {
+  if (input.ruleId !== "PD-019") {
+    return false;
+  }
+
+  const serviceEvidence = input.evidence.filter((item) => item.metadata?.factType === "external_service_matches");
+  return (
+    serviceEvidence.length > 0 &&
+    serviceEvidence.some((item) => item.completeness !== "COMPLETE" || hasUnresolvedServiceRelevance(item.excerpt))
+  );
+}
+
+function hasUnresolvedServiceRelevance(text: string): boolean {
+  const normalized = text.toLowerCase();
+  return [
+    /связ[ьи]\s+с\s+обработк[а-яё\s]*персональных\s+данных\s+не\s+подтвержд/,
+    /обработк[а-яё\s]*персональных\s+данных\s+не\s+подтвержд/,
+    /релевантност[а-яё\s]*не\s+подтвержд/,
+    /possibly|possible|unknown|unconfirmed|not\s+confirmed/
+  ].some((pattern) => pattern.test(normalized));
 }
 
 function hasOnlyReferenceOnlyEvidence(evidence: SemanticEvaluationInput["evidence"]): boolean {

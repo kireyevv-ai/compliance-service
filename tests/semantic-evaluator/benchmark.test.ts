@@ -286,6 +286,68 @@ describe("pilot semantic benchmark", () => {
     expect(results[0]).toMatchObject({ semantic_observation: "PRESENT", actual: "PASS" });
   });
 
+  it("keeps PD-017 missing date of birth as FAIL with set-inclusion criterion", async () => {
+    const testCase = PILOT_BENCHMARK_CASES.find((item) => item.caseId === "PD-017-F01")!;
+    const provider = new FakeSemanticModelProvider((request: SemanticModelRequest) =>
+      semanticResponse(
+        request.criterion.includes("EVERY material personal-data category") &&
+          request.criterion.includes("date of birth") &&
+          request.criterion.includes("-> ABSENT")
+          ? "ABSENT"
+          : "PRESENT",
+        request
+      )
+    );
+
+    const { results } = await runPilotBenchmark({ provider, cases: [testCase], stabilityCaseCount: 0 });
+
+    expect(results[0]).toMatchObject({ case_id: "PD-017-F01", actual: "FAIL", semantic_observation: "ABSENT" });
+  });
+
+  it("keeps PD-017 missing delivery address as FAIL with explicit example guidance", async () => {
+    const testCase = PILOT_BENCHMARK_CASES.find((item) => item.caseId === "PD-017-F02")!;
+    const provider = new FakeSemanticModelProvider((request: SemanticModelRequest) =>
+      semanticResponse(
+        request.criterion.includes("delivery address") && request.criterion.includes("policy lists only name and phone number")
+          ? "ABSENT"
+          : "PRESENT",
+        request
+      )
+    );
+
+    const { results } = await runPilotBenchmark({ provider, cases: [testCase], stabilityCaseCount: 0 });
+
+    expect(results[0]).toMatchObject({ case_id: "PD-017-F02", actual: "FAIL", semantic_observation: "ABSENT" });
+  });
+
+  it("keeps PD-018 payment category disclosure as PASS without requiring provider brand", async () => {
+    const testCase = PILOT_BENCHMARK_CASES.find((item) => item.caseId === "PD-018-P03")!;
+    const provider = new FakeSemanticModelProvider((request: SemanticModelRequest) =>
+      semanticResponse(
+        request.criterion.includes("Provider brand-name matching is not required") &&
+          request.criterion.includes("payment operator -> PRESENT")
+          ? "PRESENT"
+          : "ABSENT",
+        request
+      )
+    );
+
+    const { results } = await runPilotBenchmark({ provider, cases: [testCase], stabilityCaseCount: 0 });
+
+    expect(results[0]).toMatchObject({ case_id: "PD-018-P03", actual: "PASS", semantic_observation: "PRESENT" });
+  });
+
+  it("keeps PD-019 UNKNOWN service relevance as MANUAL_CHECK even when the provider returns PRESENT", async () => {
+    const testCase = PILOT_BENCHMARK_CASES.find((item) => item.caseId === "PD-019-M01")!;
+    const provider = new FakeSemanticModelProvider((request: SemanticModelRequest) =>
+      semanticResponse("PRESENT", request)
+    );
+
+    const { results } = await runPilotBenchmark({ provider, cases: [testCase], stabilityCaseCount: 0 });
+
+    expect(results[0]).toMatchObject({ case_id: "PD-019-M01", actual: "MANUAL_CHECK", semantic_observation: "PRESENT" });
+  });
+
   it("writes benchmark artifacts without raw evidence or secrets", async () => {
     const testCase: PilotBenchmarkCase = {
       caseId: "PD-008-SECRET-HYGIENE",

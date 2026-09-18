@@ -118,6 +118,54 @@ describe("generic semantic evaluator", () => {
     ).toBe("MANUAL_CHECK");
   });
 
+  it("keeps PD-019 PRESENT as MANUAL_CHECK when external-service relevance is unresolved", () => {
+    expect(
+      mapObservationToStatus("PRESENT", {
+        ruleId: "PD-019",
+        evidence: [
+          {
+            ...input.evidence[0],
+            ref: "external_service_matches:1",
+            excerpt: "Найден внешний сервис, но связь с обработкой персональных данных не подтверждена.",
+            completeness: "UNKNOWN",
+            metadata: { factType: "external_service_matches" }
+          },
+          {
+            ...input.evidence[0],
+            ref: "privacy_policy_text:2",
+            excerpt: "Персональные данные третьим лицам не передаются.",
+            completeness: "COMPLETE",
+            metadata: { factType: "privacy_policy_text" }
+          }
+        ]
+      })
+    ).toBe("MANUAL_CHECK");
+  });
+
+  it("allows PD-019 PRESENT to PASS when service relevance evidence is complete and resolved", () => {
+    expect(
+      mapObservationToStatus("PRESENT", {
+        ruleId: "PD-019",
+        evidence: [
+          {
+            ...input.evidence[0],
+            ref: "external_service_matches:1",
+            excerpt: "Найден только технический CDN без признака обработки персональных данных.",
+            completeness: "COMPLETE",
+            metadata: { factType: "external_service_matches" }
+          },
+          {
+            ...input.evidence[0],
+            ref: "privacy_policy_text:2",
+            excerpt: "Персональные данные третьим лицам не передаются.",
+            completeness: "COMPLETE",
+            metadata: { factType: "privacy_policy_text" }
+          }
+        ]
+      })
+    ).toBe("PASS");
+  });
+
   it("rejects confidence outside 0..1", async () => {
     const result = await evaluateSemanticRule(input, {
       provider: new FakeSemanticModelProvider(response("PRESENT", 1.1))
