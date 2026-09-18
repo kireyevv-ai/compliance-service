@@ -363,6 +363,61 @@ describe("static HTML fact extraction", () => {
     );
   });
 
+  it("does not use script text with English consumer keywords for language signals", () => {
+    const result = extractStaticFacts(
+      [
+        page(
+          "https://shop.test/",
+          `<main><h1>Каталог</h1><script>window.copy = "Delivery payment returns warranty support";</script></main>`
+        )
+      ],
+      { crawlCompleted: true, startUrl: "https://shop.test/" }
+    );
+
+    expect(values(result, "foreign_only_consumer_info_signal")).toContainEqual(
+      expect.objectContaining({ signal: "NONE", found: false })
+    );
+    expect(hasFact(result, "public_non_ad_consumer_info_foreign_only")).toBe(false);
+  });
+
+  it("does not use JSON script blobs with Return policy text for language signals", () => {
+    const result = extractStaticFacts(
+      [
+        page(
+          "https://shop.test/",
+          `<main><h1>Каталог</h1><script type="application/ld+json">{"name":"Return policy","payment":"card"}</script></main>`
+        )
+      ],
+      { crawlCompleted: true, startUrl: "https://shop.test/" }
+    );
+
+    expect(values(result, "foreign_only_consumer_info_signal")).toContainEqual(
+      expect.objectContaining({ signal: "NONE", found: false })
+    );
+    expect(hasFact(result, "public_non_ad_consumer_info_foreign_only")).toBe(false);
+  });
+
+  it("does not confirm language applicability from content-limited anti-bot interstitial text", () => {
+    const result = extractStaticFacts(
+      [
+        {
+          ...page(
+            "https://shop.test/vpncheck?backUrl=%2F",
+            `<main><h1>Security check</h1><p>Delivery payment returns warranty support browser verification request id.</p></main>`
+          ),
+          contentLimited: true,
+          limitationReason: "Limited-content interstitial URL"
+        }
+      ],
+      { crawlCompleted: true, startUrl: "https://shop.test/" }
+    );
+
+    expect(values(result, "foreign_only_consumer_info_signal")).not.toContainEqual(
+      expect.objectContaining({ signal: "CONFIRMED" })
+    );
+    expect(hasFact(result, "public_non_ad_consumer_info_foreign_only")).toBe(false);
+  });
+
   it("does not confirm foreign-only consumer info when a Russian equivalent is in the same block", () => {
     const result = extractStaticFacts(
       [

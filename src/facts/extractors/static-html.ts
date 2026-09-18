@@ -1,4 +1,5 @@
 import * as cheerio from "cheerio";
+import type { AnyNode } from "domhandler";
 import type { CrawledPage } from "@/scanner/crawl/types";
 import type { ExtractedEvidence, ExtractedFact, StaticExtractionOptions, StaticExtractionResult } from "./types";
 import { extractPolicyTextFacts } from "./policy-text";
@@ -522,12 +523,15 @@ function extractForeignOnlyConsumerInfoFacts(
   facts: ExtractedFact[],
   pageSignals: PageSignals
 ): void {
+  if (page.contentLimited === true || LIMITED_URL_RE.test(page.url)) {
+    return;
+  }
+
   const pageText = readablePageText($, 12_000);
   const russianPageCategories = consumerCategories(pageText, RUSSIAN_CONSUMER_CATEGORY_PATTERNS);
 
   $("main, section, article, aside, div, p, li").each((index, element) => {
-    const block = $(element);
-    const text = compactText(block.text(), 900);
+    const text = visibleElementText($, element, 900);
     if (!text || text.length < 8 || (!LATIN_TEXT_RE.test(text) && !FOREIGN_CONSUMER_RE.test(text))) {
       return;
     }
@@ -556,7 +560,7 @@ function extractForeignOnlyConsumerInfoFacts(
       detectedLanguage: "foreign",
       reason: signal === "CONFIRMED" ? "FOREIGN_ONLY_CONSUMER_TERMS" : "POSSIBLE_FOREIGN_CONSUMER_CONTEXT",
       context,
-      fragment: compactText($.html(element), 900)
+      fragment: visibleElementHtml($, element, 900)
     });
     facts.push({
       pageUrl: page.url,
@@ -634,9 +638,43 @@ function extractRecommendationTechnologyFacts(
 
 function readablePageText($: cheerio.CheerioAPI, maxChars: number): string {
   const clone = $.root().clone();
-  clone.find("script, style, noscript, template, svg").remove();
+  removeNonVisibleTechnicalNodes(clone);
   const text = compactText(clone.text(), maxChars);
   return text;
+}
+
+function visibleElementText($: cheerio.CheerioAPI, element: AnyNode, maxChars: number): string {
+  const clone = $(element).clone();
+  removeNonVisibleTechnicalNodes(clone);
+  return compactText(clone.text(), maxChars);
+}
+
+function visibleElementHtml($: cheerio.CheerioAPI, element: AnyNode, maxChars: number): string {
+  const clone = $(element).clone();
+  removeNonVisibleTechnicalNodes(clone);
+  return compactText($.html(clone), maxChars);
+}
+
+function removeNonVisibleTechnicalNodes(node: cheerio.Cheerio<AnyNode>): void {
+  node
+    .find(
+      [
+        "script",
+        "style",
+        "noscript",
+        "template",
+        "svg",
+        "meta",
+        "link",
+        "[hidden]",
+        "[aria-hidden='true']",
+        "[style*='display:none' i]",
+        "[style*='display: none' i]",
+        "[style*='visibility:hidden' i]",
+        "[style*='visibility: hidden' i]"
+      ].join(", ")
+    )
+    .remove();
 }
 
 function looksConsumerRelevantUrl(url: string): boolean {
