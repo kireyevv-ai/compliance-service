@@ -280,7 +280,7 @@ function evaluateRknNotification(context: OwnerContextInput): OwnerRuleEvaluatio
   }
 
   const answer = answerFor(context, "Q_PD_OPERATOR_RKN_NOTIFICATION");
-  const siteRefs = refs(context.facts, new Set(["seller_legal_name_candidate", "ogrn_candidate", "ogrnip_candidate"]));
+  const siteRefs = refs(context.facts, new Set(["inn_candidate", "seller_legal_name_candidate", "ogrn_candidate", "ogrnip_candidate"]));
   if (!answer) {
     return answerRequired(ruleId, questionIds);
   }

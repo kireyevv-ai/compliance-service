@@ -961,6 +961,30 @@ describe("owner context engine", () => {
     expect(evaluation.reasonCode).toBe("RULE_POLICY_REQUIRES_MANUAL_CHECK");
   });
 
+  it("uses INN as PD-023 operator identity evidence without changing the manual verdict", () => {
+    const evaluation = evaluationFor(
+      evaluateOwnerRules(
+        context({
+          facts: [
+            fact("personal_data_collection_found"),
+            fact("inn_candidate", { value: "7707083893", confidence: "HIGH" }),
+            fact("seller_legal_name_candidate")
+          ],
+          answers: [
+            answer("Q_PD_OPERATOR_RKN_NOTIFICATION", {
+              type: "SINGLE_SELECT",
+              optionId: "REGISTRY_PRESENT"
+            })
+          ]
+        })
+      ),
+      "PD-023"
+    );
+
+    expect(evaluation.status).toBe("MANUAL_CHECK");
+    expect(evaluation.siteFactRefs.map((ref) => ref.factType)).toContain("inn_candidate");
+  });
+
   it("uses one ad qualification answer for ADV-001, ADV-002, and ADV-003", () => {
     const result = evaluateOwnerRules(
       context({

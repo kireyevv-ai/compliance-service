@@ -104,6 +104,7 @@ const RUB_PRICE_RE = /((?:\d{1,3}(?:[\s\u00a0]\d{3})+|\d+)(?:[,.]\d{1,2})?)\s*(�
 const FOREIGN_PRICE_RE = /((?:\d{1,3}(?:[\s\u00a0]\d{3})+|\d+)(?:[,.]\d{1,2})?)\s*(\$|€|USD|EUR)(?=$|[\s.,;:!?<])/giu;
 const OGRN_RE = /ОГРН(?!ИП)[^\d]{0,30}([\d\s-]{13,25})/giu;
 const OGRNIP_RE = /ОГРНИП[^\d]{0,30}([\d\s-]{15,30})/giu;
+const INN_RE = /ИНН[^\d]{0,30}([\d\s-]{10,24})/giu;
 const EMAIL_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/giu;
 const PHONE_RE = /(?:\+7|8)\s*(?:\(?\d{3}\)?)[\s-]*\d{3}[\s-]*\d{2}[\s-]*\d{2}/gu;
 const LIMITED_URL_RE = /(captcha|challenge|verify[-_]?human|access[-_]?denied|forbidden|blocked|security[-_]?check|bot[-_]?check|vpn[-_]?che{0,2}ck)/i;
@@ -120,6 +121,7 @@ export function extractStaticFacts(
   const signalsByPage = new Map<string, PageSignals>();
   const sellerCandidates = {
     legalNames: new Map<string, TextCandidate>(),
+    inn: new Map<string, TextCandidate>(),
     ogrn: new Map<string, TextCandidate>(),
     ogrnip: new Map<string, TextCandidate>(),
     fio: new Map<string, TextCandidate>(),
@@ -684,6 +686,7 @@ function extractSellerFacts(
   pageUrl: string,
   candidates: {
     legalNames: Map<string, TextCandidate>;
+    inn: Map<string, TextCandidate>;
     ogrn: Map<string, TextCandidate>;
     ogrnip: Map<string, TextCandidate>;
     fio: Map<string, TextCandidate>;
@@ -701,6 +704,7 @@ function extractSellerFacts(
 
   collectMarkerNumber(text, pageUrl, OGRNIP_RE, 15, candidates.ogrnip);
   collectMarkerNumber(text, pageUrl, OGRN_RE, 13, candidates.ogrn);
+  collectInnCandidate(text, pageUrl, candidates.inn);
 
   const legalName = text.match(/(?:ООО|АО|ПАО|ЗАО)\s+[«"“]?[\p{Letter}\d .\-]+[»"”]?/u)?.[0];
   if (legalName) {
@@ -802,6 +806,7 @@ function pushCandidateFacts(
   facts: ExtractedFact[],
   candidates: {
     legalNames: Map<string, TextCandidate>;
+    inn: Map<string, TextCandidate>;
     ogrn: Map<string, TextCandidate>;
     ogrnip: Map<string, TextCandidate>;
     fio: Map<string, TextCandidate>;
@@ -811,6 +816,7 @@ function pushCandidateFacts(
     hours: Map<string, TextCandidate>;
   }
 ): void {
+  pushTextCandidateFacts(facts, "inn_candidate", candidates.inn);
   pushTextCandidateFacts(facts, "seller_legal_name_candidate", candidates.legalNames);
   pushTextCandidateFacts(facts, "ogrn_candidate", candidates.ogrn);
   pushTextCandidateFacts(facts, "ogrnip_candidate", candidates.ogrnip);
@@ -1175,6 +1181,22 @@ function collectMarkerNumber(
   for (const match of text.matchAll(regex)) {
     const digits = digitsOnly(match[1]);
     if (digits.length !== length) {
+      continue;
+    }
+
+    putCandidate(target, digits, {
+      value: digits,
+      context: nearby(text, match[0]),
+      pageUrl,
+      confidence: "HIGH"
+    });
+  }
+}
+
+function collectInnCandidate(text: string, pageUrl: string, target: Map<string, TextCandidate>): void {
+  for (const match of text.matchAll(INN_RE)) {
+    const digits = digitsOnly(match[1]);
+    if (digits.length !== 10 && digits.length !== 12) {
       continue;
     }
 

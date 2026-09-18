@@ -523,9 +523,9 @@ describe("static HTML fact extraction", () => {
           "https://shop.test/contacts",
           `
             <footer>
-              Реквизиты: ООО "Ромашка", ОГРН 1027700132195, юридический адрес: 123456, г. Москва, ул. Ленина, д. 1.
+              Реквизиты: ООО "Ромашка", ИНН 7707083893, ОГРН 1027700132195, юридический адрес: 123456, г. Москва, ул. Ленина, д. 1.
               Email: sales@example.ru, телефон +7 (495) 123-45-67. Режим работы: пн-пт 10:00-19:00.
-              Справочный номер 1234567890123 и код 123456789012345.
+              Справочный номер 1234567890, 1234567890123 и код 123456789012345.
             </footer>
           `
         ),
@@ -540,6 +540,7 @@ describe("static HTML fact extraction", () => {
     expect(values(result, "seller_legal_name_candidate")[0]).toMatchObject({
       value: expect.stringContaining("ООО")
     });
+    expect(values(result, "inn_candidate")).toContainEqual(expect.objectContaining({ value: "7707083893" }));
     expect(values(result, "ogrn_candidate")).toContainEqual(expect.objectContaining({ value: "1027700132195" }));
     expect(values(result, "ogrnip_candidate")).toContainEqual(expect.objectContaining({ value: "304500116000157" }));
     expect(values(result, "seller_fio_candidate")[0]).toMatchObject({
@@ -551,6 +552,7 @@ describe("static HTML fact extraction", () => {
     expect(values(result, "seller_email_found")[0]).toMatchObject({ found: true, maskedValue: "s***@example.ru" });
     expect(values(result, "seller_phone_found")[0]).toMatchObject({ found: true, maskedValue: "+7 *** *** ** 67" });
     expect(hasFact(result, "working_hours_candidate")).toBe(true);
+    expect(JSON.stringify(values(result, "inn_candidate"))).not.toContain("1234567890");
     expect(JSON.stringify(values(result, "ogrn_candidate"))).not.toContain("1234567890123");
   });
 

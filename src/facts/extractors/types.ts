@@ -32,6 +32,7 @@ export type StaticFactType =
   | "offer_link_found"
   | "offer_url"
   | "document_links"
+  | "inn_candidate"
   | "seller_legal_name_candidate"
   | "ogrn_candidate"
   | "ogrnip_candidate"
