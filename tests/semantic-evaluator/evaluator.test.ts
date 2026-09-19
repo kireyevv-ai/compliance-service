@@ -38,6 +38,39 @@ function withCompleteness(completeness: SemanticEvaluationInput["evidence"][numb
   return { ...input, evidence: [{ ...input.evidence[0], completeness }] };
 }
 
+function ec016Input(excerpt: string, completeness: SemanticEvaluationInput["evidence"][number]["completeness"] = "COMPLETE"): SemanticEvaluationInput {
+  return {
+    ruleId: "EC-016",
+    ruleVersion: "0.5-core",
+    criterion: "Determine whether return/refund terms contain a clear contradiction.",
+    evidence: [
+      {
+        ref: "consumer_page_text:1",
+        evidenceId: "00000000-0000-4000-8000-000000000206",
+        evidenceType: "TEXT_FRAGMENT",
+        pageUrl: "https://example.test/return",
+        excerpt,
+        completeness
+      }
+    ],
+    context: { siteType: "ECOMMERCE" }
+  };
+}
+
+function ec016Response(
+  observation: "PRESENT" | "ABSENT" | "AMBIGUOUS",
+  reasonCode: string,
+  reason = "Synthetic EC-016 result."
+) {
+  return {
+    observation,
+    confidence: observation === "AMBIGUOUS" ? 0.5 : 0.9,
+    reason_code: reasonCode,
+    reason,
+    evidence_refs: ["consumer_page_text:1"]
+  };
+}
+
 describe("generic semantic evaluator", () => {
   it("accepts a valid PRESENT response and maps it to PASS", async () => {
     const provider = new FakeSemanticModelProvider(response("PRESENT", 0.91));
@@ -65,6 +98,87 @@ describe("generic semantic evaluator", () => {
     });
 
     expect(result).toMatchObject({ status: "FAIL", observation: "ABSENT", confidence: 0.75 });
+  });
+
+  it.each([
+    [
+      "EC-016-F01",
+      "При любом возврате расходы по возврату товара всегда несет потребитель, включая случаи, когда такие расходы должен нести продавец."
+    ],
+    [
+      "EC-016-F02",
+      "Возврат товара дистанционной продажи невозможен при любых условиях, денежные средства не возвращаются."
+    ],
+    [
+      "EC-016-F03",
+      "Refunds are not available under any circumstances for distance sale orders."
+    ]
+  ])("maps %s ABSENT observation to FAIL according to EC-016 semantics", async (_caseId, excerpt) => {
+    const result = await evaluateSemanticRule(ec016Input(excerpt), {
+      provider: new FakeSemanticModelProvider(ec016Response("ABSENT", "ABSENT_SYNTHETIC"))
+    });
+
+    expect(result).toMatchObject({
+      status: "FAIL",
+      observation: "ABSENT"
+    });
+  });
+
+  it.each([
+    [
+      "EC-016-F01",
+      "При любом возврате расходы по возврату товара всегда несет потребитель, включая случаи, когда такие расходы должен нести продавец.",
+      "contradiction_present",
+      "The model detected a contradiction in the return cost allocation."
+    ],
+    [
+      "EC-016-F02",
+      "Возврат товара дистанционной продажи невозможен при любых условиях, денежные средства не возвращаются.",
+      "PRESENT_SYNTHETIC",
+      "Evidence contains an explicit contradiction with the return/refund criterion."
+    ],
+    [
+      "EC-016-F03",
+      "Refunds are not available under any circumstances for distance sale orders.",
+      "contradiction_found",
+      "Contradiction found in refund wording."
+    ]
+  ])("blocks unsafe EC-016 PASS when %s reason reports contradiction", async (_caseId, excerpt, reasonCode, reason) => {
+    const result = await evaluateSemanticRule(ec016Input(excerpt), {
+      provider: new FakeSemanticModelProvider(ec016Response("PRESENT", reasonCode, reason))
+    });
+
+    expect(result).toMatchObject({
+      status: "MANUAL_CHECK",
+      observation: "PRESENT",
+      reasonCode: "EC016_CONTRADICTION_REASON_REQUIRES_MANUAL_CHECK"
+    });
+  });
+
+  it("allows genuinely compliant EC-016 PRESENT without contradiction language to PASS", async () => {
+    const result = await evaluateSemanticRule(
+      ec016Input("Возврат товара осуществляется по заявлению покупателя в порядке, предусмотренном законом."),
+      {
+        provider: new FakeSemanticModelProvider(ec016Response("PRESENT", "RETURN_TERMS_REVIEWED", "No return/refund conflict is present."))
+      }
+    );
+
+    expect(result).toMatchObject({
+      status: "PASS",
+      observation: "PRESENT",
+      reasonCode: "RETURN_TERMS_REVIEWED"
+    });
+  });
+
+  it("keeps incomplete EC-016 terms at MANUAL_CHECK", async () => {
+    const result = await evaluateSemanticRule(ec016Input("Раздел возврата приведён далее.", "PARTIAL"), {
+      provider: new FakeSemanticModelProvider(ec016Response("ABSENT", "ABSENT_SYNTHETIC"))
+    });
+
+    expect(result).toMatchObject({
+      status: "MANUAL_CHECK",
+      observation: "ABSENT"
+    });
   });
 
   it("accepts a valid AMBIGUOUS response and maps it to MANUAL_CHECK", async () => {

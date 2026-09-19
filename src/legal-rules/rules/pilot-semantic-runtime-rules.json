@@ -435,6 +435,87 @@
     "last_verified_at": "2026-09-17"
   },
   {
+    "rule_id": "EC-014",
+    "version": "0.5-core",
+    "title": "Product page contains meaningful product information",
+    "pass_summary": "Product page contains meaningful product information.",
+    "module": "E_COMMERCE",
+    "evaluator_type": "LLM_SEMANTIC",
+    "legal_strength": "MANDATORY",
+    "status_if_triggered": "FAIL",
+    "applies_to": ["ECOMMERCE"],
+    "required_facts": ["consumer_page_text"],
+    "evidence_requirements": ["consumer_page_text"],
+    "legal_basis": ["ЗоЗПП, ст. 26.1 п. 2", "Постановление Правительства РФ №657, п. 21"],
+    "severity": "MEDIUM",
+    "evaluation": {
+      "kind": "SEMANTIC_CRITERION",
+      "criterion": "Determine whether the supplied complete product or product-card page contains meaningful product information that would help a consumer make a choice. Treat the required element as PRESENT when the evidence includes a product name plus meaningful description, properties, configuration, composition, dimensions, availability context, service content, or other substantive product/service details. Treat it as ABSENT only when a complete product/card page is available but meaningful product information is effectively absent, such as only a product name, price, image placeholder, buy button, or empty card. Do not require automatic completeness of category-specific characteristics. Use AMBIGUOUS when the evidence is partial, it is unclear whether the page is a full product/card page, or the missing information depends on the product category.",
+      "evidence_fact_types": ["consumer_page_text"]
+    },
+    "remediation": "Keep remediation in application logic; this shadow rule does not create user-facing findings.",
+    "confidence_policy": {
+      "fixed_confidence": 0.8
+    },
+    "limitations": ["Requires existing consumer_page_text from a product/card-like page. Does not evaluate category-specific completeness."],
+    "effective_from": "2026-09-19",
+    "last_verified_at": "2026-09-19"
+  },
+  {
+    "rule_id": "EC-015",
+    "version": "0.5-core",
+    "title": "Pre-contract materials disclose applicable purchase, payment, and delivery terms",
+    "pass_summary": "Pre-contract materials disclose applicable purchase, payment, and delivery terms.",
+    "module": "E_COMMERCE",
+    "evaluator_type": "LLM_SEMANTIC",
+    "legal_strength": "MANDATORY",
+    "status_if_triggered": "FAIL",
+    "applies_to": ["ECOMMERCE"],
+    "required_facts": ["consumer_page_text"],
+    "evidence_requirements": ["consumer_page_text"],
+    "legal_basis": ["ЗоЗПП, ст. 26.1 п. 2", "Постановление Правительства РФ №657, п. 21"],
+    "severity": "MEDIUM",
+    "evaluation": {
+      "kind": "SEMANTIC_CRITERION",
+      "criterion": "Determine whether the supplied pre-contract materials for distance sale disclose the applicable purchase, payment, and delivery/transfer terms that are actually relevant in the evidence. Relevant materials may be product page, public offer, cart, checkout text, payment page, delivery page, or another pre-contract consumer material. Treat the required element as PRESENT when applicable acquisition/order terms and payment terms are disclosed, and delivery/transfer terms are disclosed if delivery is offered in the supplied evidence. Treat it as ABSENT only when complete pre-contract evidence shows the corresponding function is clearly offered but the applicable terms are clearly absent. Do not treat the lack of a separate 'Delivery' page as ABSENT by itself. Use AMBIGUOUS when checkout is unavailable, evidence is partial, delivery is not confirmed, or applicability of a specific term is unclear.",
+      "evidence_fact_types": ["consumer_page_text"]
+    },
+    "remediation": "Keep remediation in application logic; this shadow rule does not create user-facing findings.",
+    "confidence_policy": {
+      "fixed_confidence": 0.8
+    },
+    "limitations": ["Does not use ПП РФ №657 п.23 as a generic delivery-publication requirement. Separate delivery page is not required by this rule."],
+    "effective_from": "2026-09-19",
+    "last_verified_at": "2026-09-19"
+  },
+  {
+    "rule_id": "EC-016",
+    "version": "0.5-core",
+    "title": "Return or refund terms do not clearly contradict distance-sale rules",
+    "pass_summary": "Return or refund terms do not clearly contradict distance-sale rules.",
+    "module": "E_COMMERCE",
+    "evaluator_type": "LLM_SEMANTIC",
+    "legal_strength": "MANDATORY",
+    "status_if_triggered": "FAIL",
+    "applies_to": ["ECOMMERCE"],
+    "required_facts": ["consumer_page_text"],
+    "evidence_requirements": ["consumer_page_text"],
+    "legal_basis": ["Постановление Правительства РФ №657, п. 25–27", "ЗоЗПП, ст. 26.1 п. 3–4"],
+    "severity": "MEDIUM",
+    "evaluation": {
+      "kind": "SEMANTIC_CRITERION",
+      "criterion": "Determine whether the supplied complete return/refund terms for distance sale contain a clear contradiction with the stated legal requirements. PRESENT means ONLY that the supplied return/refund terms were reviewed, the evidence is sufficient to evaluate them, and NO explicit contradiction with the supplied legal criterion is present. ABSENT means the evidence contains ANY clear term that contradicts the supplied legal criterion. IMPORTANT: if you detect or describe a contradiction, you MUST return ABSENT. Never return PRESENT when a contradiction is present. Examples: 'Возврат невозможен при любых условиях' -> ABSENT; 'Денежные средства не возвращаются' -> ABSENT; 'Refunds are not available under any circumstances' -> ABSENT; clear unlawful cost allocation -> ABSENT. Do not treat the absence of a public return page or absence of return terms as ABSENT by itself. Use AMBIGUOUS when return terms are absent, evidence is incomplete, unclear, or insufficient to decide safely.",
+      "evidence_fact_types": ["consumer_page_text"]
+    },
+    "remediation": "Keep remediation in application logic; this shadow rule does not create user-facing findings.",
+    "confidence_policy": {
+      "fixed_confidence": 0.8
+    },
+    "limitations": ["This is not a generic rule requiring a separate returns page. FAIL requires a clear contradiction in available terms."],
+    "effective_from": "2026-09-19",
+    "last_verified_at": "2026-09-19"
+  },
+  {
     "rule_id": "REC-003",
     "version": "0.2-shadow",
     "title": "Recommendation technology rules are accessible in Russian",

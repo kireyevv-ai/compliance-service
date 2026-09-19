@@ -55,6 +55,13 @@ const LANGUAGE_SIGNAL_FACTS = new Set([
   "page_language_signal"
 ]);
 
+const CHECKOUT_ORDER_FLOW_FACTS = new Set([
+  "remote_sale_detected",
+  "consumer_offer_detected",
+  "paid_addon_control_found",
+  "paid_addon_preselected"
+]);
+
 export const OWNER_RULE_MAPPINGS: OwnerRuleMapping[] = [
   {
     ruleId: "PD-007",
@@ -130,6 +137,12 @@ export const OWNER_RULE_MAPPINGS: OwnerRuleMapping[] = [
     questionIds: ["Q_LANGUAGE_EXCEPTION"],
     legallyAmbiguous: true,
     evaluate: evaluateLanguageException
+  },
+  {
+    ruleId: "EC-017",
+    questionIds: ["Q_ORDER_CONFIRMATION_IDENTIFIER"],
+    legallyAmbiguous: true,
+    evaluate: evaluateOrderConfirmationIdentifier
   }
 ];
 
@@ -164,6 +177,11 @@ export function getOwnerQuestionApplicability(
         return "NOT_NEEDED";
       }
       return languageQuestionApplicability(context.facts);
+    case "Q_ORDER_CONFIRMATION_IDENTIFIER":
+      if (context.siteType !== "ECOMMERCE") {
+        return "NOT_NEEDED";
+      }
+      return hasPositiveFact(context.facts, CHECKOUT_ORDER_FLOW_FACTS) ? "REQUIRED" : "UNRESOLVED";
     default:
       throw new Error(`Unknown owner question: ${questionId}`);
   }
@@ -465,6 +483,48 @@ function evaluateLanguageException(context: OwnerContextInput): OwnerRuleEvaluat
     return conflict(ruleId, questionIds, answer.answer, siteRefs);
   }
   return evaluated(ruleId, questionIds, "NOT_APPLICABLE", answer.answer, siteRefs, "Владелец указал возможное исключение из языкового требования.");
+}
+
+function evaluateOrderConfirmationIdentifier(context: OwnerContextInput): OwnerRuleEvaluation {
+  const ruleId = "EC-017";
+  const questionIds = ["Q_ORDER_CONFIRMATION_IDENTIFIER"];
+  const applicability = getOwnerQuestionApplicability("Q_ORDER_CONFIRMATION_IDENTIFIER", context);
+  if (applicability !== "REQUIRED") {
+    return applicabilityResult(ruleId, questionIds, applicability);
+  }
+
+  const answer = answerFor(context, "Q_ORDER_CONFIRMATION_IDENTIFIER");
+  const siteRefs = refs(context.facts, CHECKOUT_ORDER_FLOW_FACTS);
+  if (!answer) {
+    return answerRequired(ruleId, questionIds);
+  }
+  if ("unknown" in answer.answer) {
+    return manual(ruleId, questionIds, "OWNER_UNKNOWN", answer.answer, siteRefs);
+  }
+
+  const option = singleOption(answer.answer);
+  if (option === "CONFIRMATION_WITH_IDENTIFIER") {
+    return evaluated(
+      ruleId,
+      questionIds,
+      "PASS",
+      answer.answer,
+      siteRefs,
+      "Владелец указал, что после заказа покупатель получает подтверждение с номером заказа или другим идентификатором."
+    );
+  }
+  if (option === "CONFIRMATION_WITHOUT_IDENTIFIER" || option === "NO_CONFIRMATION") {
+    return evaluated(
+      ruleId,
+      questionIds,
+      "WARNING",
+      answer.answer,
+      siteRefs,
+      "Владелец указал, что покупатель не получает подтверждение с номером заказа или другим идентификатором."
+    );
+  }
+
+  return manual(ruleId, questionIds, "RULE_POLICY_REQUIRES_MANUAL_CHECK", answer.answer, siteRefs);
 }
 
 function authMethodsApplicability(context: OwnerContextInput): OwnerApplicabilityStatus {

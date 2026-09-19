@@ -26,6 +26,9 @@ const pilotRuleIds = [
   "PD-024",
   "EC-010",
   "EC-012",
+  "EC-014",
+  "EC-015",
+  "EC-016",
   "REC-003",
   "LANG-001"
 ] as const;
@@ -74,8 +77,8 @@ function semanticFixture(ruleId: (typeof pilotRuleIds)[number], marker: "GOLDEN_
     ruleId === "PD-010"
       ? "marketing_consent_control_found"
       : ruleId === "PD-024"
-        ? "form_fields"
-      : ruleId === "EC-010" || ruleId === "LANG-001"
+      ? "form_fields"
+      : ruleId === "EC-010" || ruleId === "EC-014" || ruleId === "EC-015" || ruleId === "EC-016" || ruleId === "LANG-001"
         ? "consumer_page_text"
       : ruleId === "EC-012"
         ? "paid_addon_control_found"
@@ -97,6 +100,12 @@ function semanticFixture(ruleId: (typeof pilotRuleIds)[number], marker: "GOLDEN_
           ? `${marker}: форма содержит поле диагноз пациента.`
         : ruleId === "EC-010"
           ? `${marker}: порядок подачи претензий и жалоб покупателя.`
+        : ruleId === "EC-014"
+          ? `${marker}: карточка товара содержит описание и характеристики.`
+        : ruleId === "EC-015"
+          ? `${marker}: оферта содержит условия покупки, оплаты и доставки.`
+        : ruleId === "EC-016"
+          ? `${marker}: условия возврата не содержат противоречий правилам дистанционной продажи.`
         : ruleId === "EC-012"
           ? `${marker}: платная дополнительная услуга в корзине.`
         : ruleId === "REC-003"
@@ -736,6 +745,109 @@ describe("pilot semantic rules shadow mode", () => {
 
     expect(result.status).toBe("NO_EVALUATION");
     expect(provider.requests).toHaveLength(0);
+  });
+
+  it("evaluates EC-014 product information with completeness-aware verdicts", async () => {
+    const meaningful = semanticFixture("EC-014", "GOLDEN_PASS");
+    meaningful.fact.pageUrl = "https://example.test/product/123";
+    meaningful.evidence.pageUrl = "https://example.test/product/123";
+    const minimal = semanticFixture("EC-014", "GOLDEN_FAIL");
+    minimal.fact.pageUrl = "https://example.test/product/empty";
+    minimal.evidence.pageUrl = "https://example.test/product/empty";
+    minimal.fact.value.semanticCompleteness = "COMPLETE";
+    minimal.evidence.payload = { ...minimal.evidence.payload, semanticCompleteness: "COMPLETE" };
+    const partial = semanticFixture("EC-014", "GOLDEN_FAIL");
+    partial.fact.pageUrl = "https://example.test/product/partial";
+    partial.evidence.pageUrl = "https://example.test/product/partial";
+    partial.fact.value.semanticCompleteness = "PARTIAL";
+    partial.evidence.payload = { ...partial.evidence.payload, semanticCompleteness: "PARTIAL" };
+
+    const [pass] = await evaluateSemanticRulesShadow({
+      scan: scanForRule("EC-014"),
+      facts: [meaningful.fact],
+      evidence: [meaningful.evidence],
+      rules: ruleOnly("EC-014"),
+      provider: goldenProvider()
+    });
+    const [fail] = await evaluateSemanticRulesShadow({
+      scan: scanForRule("EC-014"),
+      facts: [minimal.fact],
+      evidence: [minimal.evidence],
+      rules: ruleOnly("EC-014"),
+      provider: goldenProvider()
+    });
+    const [manual] = await evaluateSemanticRulesShadow({
+      scan: scanForRule("EC-014"),
+      facts: [partial.fact],
+      evidence: [partial.evidence],
+      rules: ruleOnly("EC-014"),
+      provider: goldenProvider()
+    });
+
+    expect(pass.status).toBe("PASS");
+    expect(fail.status).toBe("FAIL");
+    expect(manual.status).toBe("MANUAL_CHECK");
+  });
+
+  it("does not evaluate EC-014 on non-product consumer text", async () => {
+    const provider = goldenProvider();
+    const support = structuredFixture("ec014-support", "consumer_page_text", {
+      text: "GOLDEN_FAIL Контакты магазина и порядок обращения.",
+      semanticCompleteness: "COMPLETE"
+    });
+    support.fact.pageUrl = "https://example.test/support";
+    support.evidence.pageUrl = "https://example.test/support";
+
+    const [result] = await evaluateSemanticRulesShadow({
+      scan: scanForRule("EC-014"),
+      facts: [support.fact],
+      evidence: [support.evidence],
+      rules: ruleOnly("EC-014"),
+      provider
+    });
+
+    expect(result.status).toBe("NO_EVALUATION");
+    expect(provider.requests).toHaveLength(0);
+  });
+
+  it("keeps EC-016 missing return terms at MANUAL_CHECK rather than false FAIL", async () => {
+    const provider = goldenProvider();
+    const missingTerms = structuredFixture("ec016-missing-return", "consumer_page_text", {
+      text: "GOLDEN_FAIL Оферта описывает оплату и доставку, но публичные условия возврата не представлены.",
+      semanticCompleteness: "COMPLETE"
+    });
+    missingTerms.fact.pageUrl = "https://example.test/return";
+    missingTerms.evidence.pageUrl = "https://example.test/return";
+
+    const [result] = await evaluateSemanticRulesShadow({
+      scan: scanForRule("EC-016"),
+      facts: [missingTerms.fact],
+      evidence: [missingTerms.evidence],
+      rules: ruleOnly("EC-016"),
+      provider
+    });
+
+    expect(result.status).toBe("MANUAL_CHECK");
+    expect(result.result).toMatchObject({ observation: "ABSENT" });
+  });
+
+  it("allows EC-016 clear return contradiction to FAIL", async () => {
+    const contradiction = structuredFixture("ec016-contradiction", "consumer_page_text", {
+      text: "GOLDEN_FAIL При любом возврате расходы по возврату товара всегда несет потребитель.",
+      semanticCompleteness: "COMPLETE"
+    });
+    contradiction.fact.pageUrl = "https://example.test/return";
+    contradiction.evidence.pageUrl = "https://example.test/return";
+
+    const [result] = await evaluateSemanticRulesShadow({
+      scan: scanForRule("EC-016"),
+      facts: [contradiction.fact],
+      evidence: [contradiction.evidence],
+      rules: ruleOnly("EC-016"),
+      provider: goldenProvider()
+    });
+
+    expect(result.status).toBe("FAIL");
   });
 
   it("keeps deterministic evaluation separate from semantic shadow mode", async () => {

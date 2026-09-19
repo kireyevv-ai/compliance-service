@@ -131,14 +131,15 @@ export async function evaluateSemanticRulesShadow(
       onDiagnostic: input.onDiagnostic
     });
     const result = guardCookiePolicyCompletenessFail(rule.ruleId, guardTruncatedPolicyFail(rawResult, evidencePackage), evidencePackage);
+    const guardedResult = guardEc016ContradictionFail(rule.ruleId, result, evidencePackage);
 
     results.push({
       ruleId: rule.ruleId,
       ruleVersion: rule.version,
-      status: result.status,
+      status: guardedResult.status,
       criterion: evaluation.criterion,
-      evidenceRefs: result.status === "NO_EVALUATION" ? [] : result.evidenceRefs,
-      result
+      evidenceRefs: guardedResult.status === "NO_EVALUATION" ? [] : guardedResult.evidenceRefs,
+      result: guardedResult
     });
   }
 
@@ -348,6 +349,18 @@ function semanticRuleApplicabilityBlockReason(
     return "Cookie consent separation check requires cookie, analytics, or marketing consent together with mandatory terms context.";
   }
 
+  if (rule.ruleId === "EC-014" && !hasProductPageContext(evidencePackage)) {
+    return "Product information check requires product or product-card page evidence.";
+  }
+
+  if (rule.ruleId === "EC-015" && !hasPreContractTermsContext(evidencePackage)) {
+    return "Purchase/payment/delivery terms check requires pre-contract consumer material.";
+  }
+
+  if (rule.ruleId === "EC-016" && !hasReturnRefundContext(evidencePackage)) {
+    return "Return/refund contradiction check requires return or refund material.";
+  }
+
   return undefined;
 }
 
@@ -380,6 +393,43 @@ function isRelevantCookieOrTrackerText(text: string): boolean {
   return /(_ga|_gid|_ym|ym_|tmr_lvid|roistat|fbp|fbc|uid|userid|user_id|clientid|client_id|visitor|tracking|analytics|marketing|advert|ads?|doubleclick|googletagmanager|google-analytics|metrika|mc\.yandex|retarget|remarket|pixel|email_marketing|crm|session|checkout|phone|email)/i.test(
     text
   );
+}
+
+function hasProductPageContext(evidencePackage: SemanticEvidenceExcerpt[]): boolean {
+  return evidencePackage.some((item) => {
+    const text = `${item.pageUrl ?? ""} ${item.excerpt}`.toLowerCase();
+    return /(product|tovar|catalog|item|sku|товар|карточк|артикул|характеристик|описани|купить|цена|₽|руб)/i.test(text);
+  });
+}
+
+function hasPreContractTermsContext(evidencePackage: SemanticEvidenceExcerpt[]): boolean {
+  return evidencePackage.some((item) => {
+    const text = `${item.pageUrl ?? ""} ${item.excerpt}`.toLowerCase();
+    return /(offer|oferta|terms|checkout|cart|basket|order|payment|delivery|shipping|оплат|доставк|корзин|заказ|оферт|услови|покупк|приобретени)/i.test(
+      text
+    );
+  });
+}
+
+function hasReturnRefundContext(evidencePackage: SemanticEvidenceExcerpt[]): boolean {
+  return evidencePackage.some((item) => {
+    const text = `${item.pageUrl ?? ""} ${item.excerpt}`.toLowerCase();
+    return /(return|refund|returns|возврат|возмещ|отказ\s+от\s+товар|обмен)/i.test(text);
+  });
+}
+
+function hasExplicitReturnContradictionSignal(evidencePackage: SemanticEvidenceExcerpt[]): boolean {
+  return evidencePackage.some((item) => {
+    const text = item.excerpt.toLowerCase();
+    return [
+      /расход[а-яё\s]*(?:по|на)\s+возврат[а-яё\s]*(?:всегда\s+)?(?:нес[её]т|оплачивает)\s+потребител/,
+      /потребител[а-яё\s]*(?:всегда\s+)?(?:нес[её]т|оплачивает)[а-яё\s]*расход[а-яё\s]*(?:по|на)\s+возврат/,
+      /стоимость\s+возврат[а-яё\s]*не\s+возмещ/,
+      /возврат[а-яё\s]*(?:невозможен|не\s+принимается|запрещ[её]н)\s+при\s+любых\s+условиях/,
+      /return\s+shipping\s+is\s+always\s+paid\s+by\s+the\s+consumer/,
+      /refunds?\s+are\s+not\s+available\s+under\s+any\s+circumstances/
+    ].some((pattern) => pattern.test(text));
+  });
 }
 
 function hasNoThirdPartyTransferClaim(evidence: SemanticEvidenceExcerpt[]): boolean {
@@ -545,6 +595,26 @@ function guardCookiePolicyCompletenessFail(
     confidence: Math.min(result.confidence, 0.5),
     reasonCode: "COOKIE_POLICY_EVIDENCE_REQUIRES_MANUAL_CHECK",
     reason: "Cookie disclosure evidence is incomplete, so shadow mode cannot produce an absence-based FAIL.",
+    evidenceRefs: result.evidenceRefs
+  };
+  return guarded;
+}
+
+function guardEc016ContradictionFail(
+  ruleId: string,
+  result: SemanticEvaluationResult,
+  evidencePackage: SemanticEvidenceExcerpt[]
+): SemanticEvaluationResult {
+  if (ruleId !== "EC-016" || result.status !== "FAIL" || hasExplicitReturnContradictionSignal(evidencePackage)) {
+    return result;
+  }
+
+  const guarded: SemanticEvaluation = {
+    status: "MANUAL_CHECK",
+    observation: result.observation,
+    confidence: Math.min(result.confidence, 0.5),
+    reasonCode: "RETURN_TERMS_CONTRADICTION_REQUIRES_MANUAL_CHECK",
+    reason: "Return/refund evidence did not contain an explicit contradiction signal, so absence-based FAIL was downgraded.",
     evidenceRefs: result.evidenceRefs
   };
   return guarded;

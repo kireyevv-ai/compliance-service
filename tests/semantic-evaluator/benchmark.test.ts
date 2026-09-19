@@ -18,7 +18,7 @@ function semanticResponse(observation: SemanticObservation, request: SemanticMod
 
 describe("pilot semantic benchmark", () => {
   it("contains at least 8 synthetic cases per pilot rule", () => {
-    expect(PILOT_BENCHMARK_CASES).toHaveLength(144);
+    expect(PILOT_BENCHMARK_CASES).toHaveLength(168);
     for (const ruleId of [
       "PD-005",
       "PD-008",
@@ -36,6 +36,9 @@ describe("pilot semantic benchmark", () => {
       "PD-024",
       "EC-010",
       "EC-012",
+      "EC-014",
+      "EC-015",
+      "EC-016",
       "REC-003",
       "LANG-001"
     ]) {
@@ -349,6 +352,27 @@ describe("pilot semantic benchmark", () => {
 
     expect(results[0]).toMatchObject({ case_id: "PD-019-M01", actual: "MANUAL_CHECK", semantic_observation: "PRESENT" });
   });
+
+  it.each(["EC-016-F01", "EC-016-F02", "EC-016-F03"])(
+    "blocks unsafe EC-016 benchmark PASS when %s provider reason reports contradiction",
+    async (caseId) => {
+      const testCase = PILOT_BENCHMARK_CASES.find((item) => item.caseId === caseId)!;
+      const provider = new FakeSemanticModelProvider((request: SemanticModelRequest) => ({
+        ...semanticResponse("PRESENT", request),
+        reason_code: "contradiction_found",
+        reason: "The provider found an explicit contradiction in return/refund terms."
+      }));
+
+      const { results } = await runPilotBenchmark({ provider, cases: [testCase], stabilityCaseCount: 0 });
+
+      expect(results[0]).toMatchObject({
+        case_id: caseId,
+        actual: "MANUAL_CHECK",
+        semantic_observation: "PRESENT",
+        reason_code: "EC016_CONTRADICTION_REASON_REQUIRES_MANUAL_CHECK"
+      });
+    }
+  );
 
   it("writes benchmark artifacts without raw evidence or secrets", async () => {
     const testCase: PilotBenchmarkCase = {

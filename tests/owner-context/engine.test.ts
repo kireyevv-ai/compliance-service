@@ -93,8 +93,8 @@ function evaluationFor(result: ReturnType<typeof evaluateOwnerRules>, ruleId: st
 }
 
 describe("owner question registry", () => {
-  it("defines the 9 core owner questions with only supported structured answer types", () => {
-    expect(OWNER_QUESTIONS).toHaveLength(9);
+  it("defines the owner questions with only supported structured answer types", () => {
+    expect(OWNER_QUESTIONS).toHaveLength(10);
     expect(OWNER_QUESTIONS.map((question) => question.questionId)).toEqual([
       "Q_PD_COLLECTION_LEGAL_BASIS",
       "Q_MARKETING_CONSENT_PROOF",
@@ -104,14 +104,15 @@ describe("owner question registry", () => {
       "Q_AUTH_OWNER_STATUS",
       "Q_AUTH_METHODS",
       "Q_RECOMMENDER_TECH_USE",
-      "Q_LANGUAGE_EXCEPTION"
+      "Q_LANGUAGE_EXCEPTION",
+      "Q_ORDER_CONFIRMATION_IDENTIFIER"
     ]);
     expect(new Set(OWNER_QUESTIONS.map((question) => question.answerType))).toEqual(
       new Set(["SINGLE_SELECT", "MULTI_SELECT"])
     );
   });
 
-  it("maps 13 OWNER_MANUAL rules and reuses shared questions across rules", () => {
+  it("maps 14 OWNER_MANUAL rules and reuses shared questions across rules", () => {
     expect(OWNER_RULE_MAPPINGS.map((mapping) => mapping.ruleId)).toEqual([
       "PD-007",
       "PD-012",
@@ -125,7 +126,8 @@ describe("owner question registry", () => {
       "REC-001",
       "REC-002",
       "REC-004",
-      "LANG-002"
+      "LANG-002",
+      "EC-017"
     ]);
 
     expect(
@@ -562,6 +564,18 @@ describe("owner context engine", () => {
         })
       ],
       expectedStatus: "WARNING"
+    },
+    {
+      ruleId: "EC-017",
+      siteType: "ECOMMERCE",
+      facts: [fact("remote_sale_detected")],
+      answers: [
+        answer("Q_ORDER_CONFIRMATION_IDENTIFIER", {
+          type: "SINGLE_SELECT",
+          optionId: "CONFIRMATION_WITH_IDENTIFIER"
+        })
+      ],
+      expectedStatus: "PASS"
     }
   ] as const)("executes applicable happy path for $ruleId", (scenario) => {
     const evaluation = evaluationFor(
@@ -595,7 +609,8 @@ describe("owner context engine", () => {
     ["REC-001", [fact("recommendation_technology_suspected")], "Q_RECOMMENDER_TECH_USE", undefined],
     ["REC-002", [fact("recommendation_technology_suspected")], "Q_RECOMMENDER_TECH_USE", undefined],
     ["REC-004", [fact("recommendation_technology_suspected")], "Q_RECOMMENDER_TECH_USE", undefined],
-    ["LANG-002", [fact("public_non_ad_consumer_info_foreign_only")], "Q_LANGUAGE_EXCEPTION", "ECOMMERCE"]
+    ["LANG-002", [fact("public_non_ad_consumer_info_foreign_only")], "Q_LANGUAGE_EXCEPTION", "ECOMMERCE"],
+    ["EC-017", [fact("remote_sale_detected")], "Q_ORDER_CONFIRMATION_IDENTIFIER", "ECOMMERCE"]
   ] as const)("keeps unanswered applicable %s unresolved", (ruleId, facts, questionId, siteType) => {
     const evaluation = evaluationFor(evaluateOwnerRules(context({ siteType, facts })), ruleId);
 
@@ -617,7 +632,8 @@ describe("owner context engine", () => {
     ["REC-001", [fact("recommendation_technology_suspected")], "Q_RECOMMENDER_TECH_USE", undefined],
     ["REC-002", [fact("recommendation_technology_suspected")], "Q_RECOMMENDER_TECH_USE", undefined],
     ["REC-004", [fact("recommendation_technology_suspected")], "Q_RECOMMENDER_TECH_USE", undefined],
-    ["LANG-002", [fact("public_non_ad_consumer_info_foreign_only")], "Q_LANGUAGE_EXCEPTION", "ECOMMERCE"]
+    ["LANG-002", [fact("public_non_ad_consumer_info_foreign_only")], "Q_LANGUAGE_EXCEPTION", "ECOMMERCE"],
+    ["EC-017", [fact("remote_sale_detected")], "Q_ORDER_CONFIRMATION_IDENTIFIER", "ECOMMERCE"]
   ] as const)("turns unknown answer for %s into MANUAL_CHECK", (ruleId, facts, questionId, siteType) => {
     const evaluation = evaluationFor(
       evaluateOwnerRules(
@@ -648,7 +664,9 @@ describe("owner context engine", () => {
     ["REC-001", "B2B", [], "UNRESOLVED"],
     ["REC-002", "B2B", [], "UNRESOLVED"],
     ["REC-004", "B2B", [], "UNRESOLVED"],
-    ["LANG-002", "ECOMMERCE", [fact("page_language_signal")], "UNRESOLVED"]
+    ["LANG-002", "ECOMMERCE", [fact("page_language_signal")], "UNRESOLVED"],
+    ["EC-017", "B2B", [fact("remote_sale_detected")], "NOT_APPLICABLE"],
+    ["EC-017", "ECOMMERCE", [], "UNRESOLVED"]
   ] as const)("returns not applicable or unresolved applicability for %s", (ruleId, siteType, facts, expectedStatus) => {
     const evaluation = evaluationFor(evaluateOwnerRules(context({ siteType, facts })), ruleId);
 
@@ -1035,5 +1053,66 @@ describe("owner context engine", () => {
         { questionId: "Q_RECOMMENDER_TECH_USE", answerId: "Q_RECOMMENDER_TECH_USE-site-answer" }
       ]);
     }
+  });
+
+  it("evaluates order confirmation identifier through owner context without public-page auto FAIL", () => {
+    const withIdentifier = evaluationFor(
+      evaluateOwnerRules(
+        context({
+          siteType: "ECOMMERCE",
+          facts: [fact("remote_sale_detected")],
+          answers: [
+            answer("Q_ORDER_CONFIRMATION_IDENTIFIER", {
+              type: "SINGLE_SELECT",
+              optionId: "CONFIRMATION_WITH_IDENTIFIER"
+            })
+          ]
+        })
+      ),
+      "EC-017"
+    );
+    const withoutIdentifier = evaluationFor(
+      evaluateOwnerRules(
+        context({
+          siteType: "ECOMMERCE",
+          facts: [fact("remote_sale_detected")],
+          answers: [
+            answer("Q_ORDER_CONFIRMATION_IDENTIFIER", {
+              type: "SINGLE_SELECT",
+              optionId: "CONFIRMATION_WITHOUT_IDENTIFIER"
+            })
+          ]
+        })
+      ),
+      "EC-017"
+    );
+    const noConfirmation = evaluationFor(
+      evaluateOwnerRules(
+        context({
+          siteType: "ECOMMERCE",
+          facts: [fact("remote_sale_detected")],
+          answers: [
+            answer("Q_ORDER_CONFIRMATION_IDENTIFIER", {
+              type: "SINGLE_SELECT",
+              optionId: "NO_CONFIRMATION"
+            })
+          ]
+        })
+      ),
+      "EC-017"
+    );
+
+    expect(withIdentifier).toMatchObject({
+      applicability: "REQUIRED",
+      status: "PASS"
+    });
+    expect(withoutIdentifier).toMatchObject({
+      applicability: "REQUIRED",
+      status: "WARNING"
+    });
+    expect(noConfirmation).toMatchObject({
+      applicability: "REQUIRED",
+      status: "WARNING"
+    });
   });
 });

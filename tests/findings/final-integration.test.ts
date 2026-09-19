@@ -112,6 +112,9 @@ function ruleSpecificSemanticProvider() {
     "PD-024": "Специальные данные",
     "EC-010": "Порядок претензий",
     "EC-012": "Платная услуга",
+    "EC-014": "Информация о товаре",
+    "EC-015": "Условия покупки",
+    "EC-016": "Условия возврата",
     "REC-003": "Правила рекомендаций",
     "LANG-001": "Русский язык"
   };
@@ -573,6 +576,39 @@ describe("final production finding integration", () => {
     await factWithEvidence(
       db,
       scan.id,
+      "consumer_page_text",
+      {
+        text: "Информация о товаре: карточка товара не содержит описания и характеристик.",
+        semanticCompleteness: "COMPLETE"
+      },
+      "Информация о товаре: карточка товара не содержит описания и характеристик.",
+      "https://example.test/product#info"
+    );
+    await factWithEvidence(
+      db,
+      scan.id,
+      "consumer_page_text",
+      {
+        text: "Условия покупки: в оферте не найдены условия оплаты и доставки.",
+        semanticCompleteness: "COMPLETE"
+      },
+      "Условия покупки: в оферте не найдены условия оплаты и доставки.",
+      "https://example.test/offer#sale-terms"
+    );
+    await factWithEvidence(
+      db,
+      scan.id,
+      "consumer_page_text",
+      {
+        text: "Условия возврата: возврат товара невозможен при любых условиях.",
+        semanticCompleteness: "COMPLETE"
+      },
+      "Условия возврата: возврат товара невозможен при любых условиях.",
+      "https://example.test/return#refund-terms"
+    );
+    await factWithEvidence(
+      db,
+      scan.id,
       "recommendation_technology_confirmed",
       {
         found: true
@@ -777,6 +813,9 @@ describe("final production finding integration", () => {
     const pd024 = views.find((finding) => finding.ruleId === "PD-024")!;
     const ec010 = views.find((finding) => finding.ruleId === "EC-010")!;
     const ec012 = views.find((finding) => finding.ruleId === "EC-012")!;
+    const ec014 = views.find((finding) => finding.ruleId === "EC-014")!;
+    const ec015 = views.find((finding) => finding.ruleId === "EC-015")!;
+    const ec016 = views.find((finding) => finding.ruleId === "EC-016")!;
     const rec003 = views.find((finding) => finding.ruleId === "REC-003")!;
     const lang001 = views.find((finding) => finding.ruleId === "LANG-001")!;
 
@@ -834,6 +873,18 @@ describe("final production finding integration", () => {
       pageUrl: "https://example.test/checkout#addon",
       detail: expect.stringContaining("платная настройка обязательна")
     });
+    expect(ec014.evidence[0]).toMatchObject({
+      pageUrl: "https://example.test/product#info",
+      detail: expect.stringContaining("карточка товара не содержит описания")
+    });
+    expect(ec015.evidence[0]).toMatchObject({
+      pageUrl: "https://example.test/offer#sale-terms",
+      detail: expect.stringContaining("не найдены условия оплаты и доставки")
+    });
+    expect(ec016.evidence[0]).toMatchObject({
+      pageUrl: "https://example.test/return#refund-terms",
+      detail: expect.stringContaining("возврат товара невозможен")
+    });
     expect(rec003.evidence[0]).toMatchObject({
       pageUrl: "https://example.test/recommendations#rules",
       detail: expect.stringContaining("страница доступна только после входа")
@@ -843,7 +894,7 @@ describe("final production finding integration", () => {
       detail: expect.stringContaining("Return policy is available in English only")
     });
 
-    const pilotViews = [pd005, pd008, pd009, pd010, pd013, pd014, pd015, pd016, pd017, pd018, pd019, pd024, ec010, ec012, rec003, lang001];
+    const pilotViews = [pd005, pd008, pd009, pd010, pd013, pd014, pd015, pd016, pd017, pd018, pd019, pd024, ec010, ec012, ec014, ec015, ec016, rec003, lang001];
     const rendered = JSON.stringify(pilotViews.map((finding) => finding.evidence));
     expect(rendered).not.toContain("ТЕКСТ_СОГЛАСИЯ");
     expect(rendered).not.toContain("ЦЕЛИ_ОБРАБОТКИ");
@@ -853,6 +904,9 @@ describe("final production finding integration", () => {
     expect(rendered).not.toContain("Специальные данные:");
     expect(rendered).not.toContain("Порядок претензий:");
     expect(rendered).not.toContain("Платная услуга:");
+    expect(rendered).not.toContain("Информация о товаре:");
+    expect(rendered).not.toContain("Условия покупки:");
+    expect(rendered).not.toContain("Условия возврата:");
     expect(rendered).not.toContain("Правила рекомендаций:");
     expect(rendered).not.toContain("Русский язык:");
     expect(pd008.evidence[0].detail).not.toContain("https://example.test/consent#purpose");
@@ -863,6 +917,12 @@ describe("final production finding integration", () => {
     expect(pd016.evidence[0].detail).not.toContain("целей обработки");
     expect(pd016.evidence[0].detail).not.toContain("категорий данных");
     expect(pd016.evidence[0].detail).not.toContain("сроков хранения");
+    expect(ec014.evidence[0].detail).not.toContain("условия оплаты");
+    expect(ec014.evidence[0].detail).not.toContain("возврат товара невозможен");
+    expect(ec015.evidence[0].detail).not.toContain("карточка товара");
+    expect(ec015.evidence[0].detail).not.toContain("возврат товара невозможен");
+    expect(ec016.evidence[0].detail).not.toContain("карточка товара");
+    expect(ec016.evidence[0].detail).not.toContain("условия оплаты");
   });
 
   it("uses meaningful owner manual-check text without internal codes", async () => {

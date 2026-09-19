@@ -18,6 +18,9 @@ export type PilotBenchmarkRuleId =
   | "PD-024"
   | "EC-010"
   | "EC-012"
+  | "EC-014"
+  | "EC-015"
+  | "EC-016"
   | "REC-003"
   | "LANG-001";
 export type BenchmarkExpectedVerdict = SemanticEvaluationStatus;
@@ -205,6 +208,33 @@ export const PILOT_BENCHMARK_CASES: PilotBenchmarkCase[] = [
   c("EC-012-F03", "EC-012", "FAIL", "ABSENT", "Main purchase is conditioned on paid package.", addon("Товар продаётся только вместе с обязательным сервисным пакетом за отдельную плату.", "COMPLETE")),
   c("EC-012-M01", "EC-012", "MANUAL_CHECK", "AMBIGUOUS", "Paid add-on shown but optionality unclear.", addon("В корзине отображается платная услуга упаковки.")),
   c("EC-012-M02", "EC-012", "MANUAL_CHECK", "ABSENT", "Partial checkout fragment cannot prove mandatory nature.", addon("Продолжение оформления заказа недоступно.", "PARTIAL")),
+
+  c("EC-014-P01", "EC-014", "PASS", "PRESENT", "Product page gives name and substantive properties.", consumer("Карточка товара: Смартфон X. Экран 6.5 дюйма, память 128 ГБ, камера 50 Мп, комплект поставки и гарантия указаны.", "COMPLETE")),
+  c("EC-014-P02", "EC-014", "PASS", "PRESENT", "Service product page describes contents.", consumer("Услуга настройки: состав работ, сроки выполнения, результат и ограничения услуги описаны на странице товара.", "COMPLETE")),
+  c("EC-014-P03", "EC-014", "PASS", "PRESENT", "Product page has meaningful consumer details.", consumer("Карточка: кресло офисное. Материал, размеры, максимальная нагрузка, цвет и условия сборки указаны.", "COMPLETE")),
+  c("EC-014-F01", "EC-014", "FAIL", "ABSENT", "Complete product card has only name and buy button.", consumer("Карточка товара: Товар 123. Цена 1990 руб. Купить.", "COMPLETE")),
+  c("EC-014-F02", "EC-014", "FAIL", "ABSENT", "Complete product card is empty placeholder.", consumer("Страница товара: изображение недоступно, описание отсутствует, характеристики отсутствуют, кнопка Купить.", "COMPLETE")),
+  c("EC-014-F03", "EC-014", "FAIL", "ABSENT", "Complete product card lacks substantive info.", consumer("Карточка услуги: Пакет Стандарт. Цена 5000 руб. Оформить заказ. Описание не заполнено.", "COMPLETE")),
+  c("EC-014-M01", "EC-014", "MANUAL_CHECK", "ABSENT", "Partial product page cannot prove absence.", consumer("Карточка товара: описание ниже.", "PARTIAL")),
+  c("EC-014-M02", "EC-014", "MANUAL_CHECK", "AMBIGUOUS", "Category-specific sufficiency is unclear.", consumer("Карточка товара содержит краткое описание модели, но неясно, какие характеристики важны для этой категории.")),
+
+  c("EC-015-P01", "EC-015", "PASS", "PRESENT", "Offer discloses ordering, payment and delivery.", consumer("Оферта: заказ оформляется через корзину, оплата банковской картой, доставка курьером по указанному адресу в течение 3 дней.", "COMPLETE")),
+  c("EC-015-P02", "EC-015", "PASS", "PRESENT", "Product page discloses pickup and payment terms.", consumer("На странице товара указано: самовывоз из магазина, оплата онлайн или при получении, заказ подтверждается после оплаты.", "COMPLETE")),
+  c("EC-015-P03", "EC-015", "PASS", "PRESENT", "Checkout text has applicable terms.", consumer("Корзина: выберите способ получения, адрес доставки, способ оплаты и подтвердите заказ после проверки условий.", "COMPLETE")),
+  c("EC-015-F01", "EC-015", "FAIL", "ABSENT", "Complete materials offer delivery but omit delivery terms.", consumer("Интернет-магазин предлагает доставку товара, но публичные условия содержат только цену товара и кнопку купить без условий оплаты и доставки.", "COMPLETE")),
+  c("EC-015-F02", "EC-015", "FAIL", "ABSENT", "Complete pre-contract text omits payment terms for online order.", consumer("Оферта описывает оформление заказа и доставку, но не содержит условий оплаты при дистанционной продаже.", "COMPLETE")),
+  c("EC-015-F03", "EC-015", "FAIL", "ABSENT", "Complete checkout material omits applicable acquisition terms.", consumer("Checkout page shows product total and delivery is offered, but no purchase, payment, transfer or delivery terms are disclosed.", "COMPLETE")),
+  c("EC-015-M01", "EC-015", "MANUAL_CHECK", "ABSENT", "Partial checkout cannot prove omission.", consumer("Корзина: условия доставки указаны далее.", "PARTIAL")),
+  c("EC-015-M02", "EC-015", "MANUAL_CHECK", "AMBIGUOUS", "Delivery applicability is unclear.", consumer("На сайте указано: получение обсуждается с менеджером после заказа.")),
+
+  c("EC-016-P01", "EC-016", "PASS", "PRESENT", "Return terms contain no explicit contradiction.", consumer("Возврат товара дистанционной продажи осуществляется по заявлению покупателя, стоимость возвращается в установленный законом срок.", "COMPLETE")),
+  c("EC-016-P02", "EC-016", "PASS", "PRESENT", "Refund terms look consistent.", consumer("Покупатель может отказаться от товара в порядке, предусмотренном законом; возврат денежных средств производится после получения товара.", "COMPLETE")),
+  c("EC-016-P03", "EC-016", "PASS", "PRESENT", "Return page has neutral lawful wording.", consumer("Условия возврата применяются с учетом правил дистанционной продажи и Закона о защите прав потребителей.", "COMPLETE")),
+  c("EC-016-F01", "EC-016", "FAIL", "ABSENT", "Return costs always shifted to consumer.", consumer("При любом возврате расходы по возврату товара всегда несет потребитель, включая случаи, когда такие расходы должен нести продавец.", "COMPLETE")),
+  c("EC-016-F02", "EC-016", "FAIL", "ABSENT", "Return impossible under any circumstances.", consumer("Возврат товара дистанционной продажи невозможен при любых условиях, денежные средства не возвращаются.", "COMPLETE")),
+  c("EC-016-F03", "EC-016", "FAIL", "ABSENT", "Refund explicitly denied categorically.", consumer("Refunds are not available under any circumstances for distance sale orders.", "COMPLETE")),
+  c("EC-016-M01", "EC-016", "MANUAL_CHECK", "AMBIGUOUS", "Return terms absent from public evidence.", consumer("Оферта описывает товар, оплату и доставку, но публичные условия возврата не представлены.", "COMPLETE")),
+  c("EC-016-M02", "EC-016", "MANUAL_CHECK", "ABSENT", "Incomplete return document cannot prove contradiction.", consumer("Раздел возврата приведён далее.", "PARTIAL")),
 
   c("REC-003-P01", "REC-003", "PASS", "PRESENT", "Russian rules text is accessible.", recommenderRules("Правила применения рекомендательных технологий опубликованы на русском языке и доступны без входа.")),
   c("REC-003-P02", "REC-003", "PASS", "PRESENT", "Russian equivalent is present.", recommenderRules("Rules of recommendation technologies / Правила рекомендательных технологий: документ доступен на русском языке.")),

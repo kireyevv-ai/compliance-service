@@ -127,6 +127,19 @@ export const OWNER_QUESTIONS: OwnerQuestionDefinition[] = [
       { optionId: "NOT_MANDATORY_CONSUMER_INFO", label: "Это не обязательная потребительская информация" },
       { optionId: "NO_EXCEPTION", label: "Исключения нет" }
     ]
+  },
+  {
+    questionId: "Q_ORDER_CONFIRMATION_IDENTIFIER",
+    text: "После оформления заказа получает ли покупатель подтверждение с номером заказа или другим идентификатором?",
+    explanation: "По публичным страницам нельзя надёжно проверить, что происходит после оформления заказа.",
+    answerType: "SINGLE_SELECT",
+    required: true,
+    allowUnknown: true,
+    options: [
+      { optionId: "CONFIRMATION_WITH_IDENTIFIER", label: "Да, покупатель получает номер заказа или другой идентификатор" },
+      { optionId: "CONFIRMATION_WITHOUT_IDENTIFIER", label: "Подтверждение есть, но номера заказа или идентификатора нет" },
+      { optionId: "NO_CONFIRMATION", label: "Нет, подтверждение после заказа не отправляется" }
+    ]
   }
 ];
 

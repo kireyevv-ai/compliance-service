@@ -90,14 +90,14 @@ export async function evaluateSemanticRule(
       return result;
     }
 
-    const result: SemanticEvaluation = {
+    const result = applyRuleSpecificSafetyGuards({
       status: mapObservationToStatus(validation.data.observation, input),
       observation: validation.data.observation,
       confidence: validation.data.confidence,
       reasonCode: validation.data.reason_code,
       reason: validation.data.reason,
       evidenceRefs: validation.data.evidence_refs
-    };
+    }, input);
     emitDiagnostic(options, input.ruleId, startedAt, "ok", result);
     return result;
   } catch (error) {
@@ -109,6 +109,39 @@ export async function evaluateSemanticRule(
     emitDiagnostic(options, input.ruleId, startedAt, timeout ? "timeout" : "error", result);
     return result;
   }
+}
+
+function applyRuleSpecificSafetyGuards(
+  result: SemanticEvaluation,
+  input: Pick<SemanticEvaluationInput, "ruleId">
+): SemanticEvaluation {
+  if (
+    input.ruleId === "EC-016" &&
+    result.status === "PASS" &&
+    result.observation === "PRESENT" &&
+    ec016ReasonReportsContradiction(result)
+  ) {
+    return {
+      ...result,
+      status: "MANUAL_CHECK",
+      confidence: Math.min(result.confidence, 0.5),
+      reasonCode: "EC016_CONTRADICTION_REASON_REQUIRES_MANUAL_CHECK",
+      reason:
+        "The provider returned PRESENT for EC-016 while its reason indicated that a return/refund contradiction was found, so PASS was blocked."
+    };
+  }
+
+  return result;
+}
+
+function ec016ReasonReportsContradiction(result: Pick<SemanticEvaluation, "reasonCode" | "reason">): boolean {
+  const text = `${result.reasonCode} ${result.reason}`.toLowerCase();
+  return [
+    /contradiction[_\s-]*(?:present|found|detected)/,
+    /explicit\s+contradiction/,
+    /contradicts?\s+(?:the\s+)?(?:criterion|rule|requirement|legal)/,
+    /противореч[а-яё\s-]*(?:найден|обнаруж|присутств)/
+  ].some((pattern) => pattern.test(text));
 }
 
 export function mapObservationToStatus(
