@@ -102,6 +102,7 @@ export interface StaticExtractionOptions {
   crawlCompleted: boolean;
   startUrl?: string;
   maxPagesReached?: boolean;
+  scanLimitationReason?: string;
 }
 
 export interface StaticExtractionResult {

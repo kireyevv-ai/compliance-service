@@ -1,5 +1,6 @@
 import { DEFAULT_CRAWL_CONFIG, type CrawlConfig } from "./config";
 import { fetchPage, type FetchTransport } from "./fetch";
+import { abortError } from "@/jobs/scan-deadline";
 import {
   extractHrefValues,
   extractTitle,
@@ -15,6 +16,7 @@ export interface CrawlOptions {
   config?: Partial<CrawlConfig>;
   resolver?: HostResolver;
   transport?: FetchTransport;
+  signal?: AbortSignal;
 }
 
 export async function crawlSite(inputUrl: string, options: CrawlOptions = {}): Promise<CrawlResult> {
@@ -29,6 +31,7 @@ export async function crawlSite(inputUrl: string, options: CrawlOptions = {}): P
   let maxPagesReached = false;
 
   while (queue.length > 0 && pages.length < config.maxPages) {
+    throwIfAborted(options.signal);
     if (Date.now() > deadline) {
       throw new Error("Total crawl timeout");
     }
@@ -39,9 +42,11 @@ export async function crawlSite(inputUrl: string, options: CrawlOptions = {}): P
         withPageTimeout(
           crawlOnePage(url, normalized, config, {
             resolver: options.resolver ?? dnsHostResolver,
-            transport: options.transport
+            transport: options.transport,
+            signal: options.signal
           }),
-          config.requestTimeoutMs + 1_000
+          config.requestTimeoutMs + 1_000,
+          options.signal
         )
       )
     );
@@ -92,7 +97,7 @@ async function crawlOnePage(
   url: string,
   normalized: NormalizedUrl,
   config: CrawlConfig,
-  options: { resolver: HostResolver; transport?: FetchTransport }
+  options: { resolver: HostResolver; transport?: FetchTransport; signal?: AbortSignal }
 ): Promise<CrawledPage> {
   const response = await fetchPage(url, config, options);
   const finalUrl = new URL(response.url);
@@ -199,21 +204,41 @@ function normalizeForVisitKey(url: string): string {
   return parsed.toString();
 }
 
-function withPageTimeout<T>(operation: Promise<T>, timeoutMs: number): Promise<T> {
+function withPageTimeout<T>(operation: Promise<T>, timeoutMs: number, signal?: AbortSignal): Promise<T> {
   return new Promise((resolve, reject) => {
+    const aborted = abortError(signal);
+    if (aborted) {
+      reject(aborted);
+      return;
+    }
+
     const timeout = setTimeout(() => {
       reject(new Error("HTTP request timeout"));
     }, timeoutMs);
+    const onAbort = () => {
+      clearTimeout(timeout);
+      reject(abortError(signal) ?? new Error("Operation aborted"));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
 
     operation.then(
       (result) => {
         clearTimeout(timeout);
+        signal?.removeEventListener("abort", onAbort);
         resolve(result);
       },
       (error) => {
         clearTimeout(timeout);
+        signal?.removeEventListener("abort", onAbort);
         reject(error);
       }
     );
   });
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  const error = abortError(signal);
+  if (error) {
+    throw error;
+  }
 }

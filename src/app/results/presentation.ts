@@ -41,6 +41,16 @@ export function coverageOutcomeForResult(input: {
   const successfulHtmlPages = Number(input.coverage?.successfulHtmlPages ?? 0);
   const pagesVisited = Number(input.coverage?.pagesVisited ?? 0);
 
+  if (isScanDeadlineReason(reason) && successfulHtmlPages === 0) {
+    return {
+      kind: "NETWORK_UNAVAILABLE",
+      blocksResults: true,
+      title: "Не удалось проверить сайт",
+      message:
+        "Проверка заняла слишком много времени и была остановлена. Сайт не удалось достаточно прочитать, поэтому оценить его соответствие требованиям невозможно."
+    };
+  }
+
   if (input.scanStatus === "FAILED" && /timeout|network|timed?\s*out/i.test(input.statusReason ?? "")) {
     return {
       kind: "NETWORK_UNAVAILABLE",
@@ -121,6 +131,10 @@ function isAccessProtectionReason(reason: string): boolean {
 
 function isRateLimitReason(reason: string): boolean {
   return /(HTTP\s*)?429|rate.?limit|too many requests/i.test(reason);
+}
+
+function isScanDeadlineReason(reason: string): boolean {
+  return /scan_total_timeout|scan total timeout|scan deadline/i.test(reason);
 }
 
 export type FindingGroup = "fix" | "attention" | "manual" | "passed";

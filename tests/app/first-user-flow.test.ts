@@ -606,6 +606,17 @@ describe("results presentation", () => {
     expect(outcome.message).toContain("не ответил вовремя");
   });
 
+  it("explains when the whole scan deadline stopped the check before reading content", () => {
+    const outcome = coverageOutcomeForResult({
+      scanStatus: "FAILED",
+      statusReason: "SCAN_TOTAL_TIMEOUT"
+    });
+
+    expect(outcome.blocksResults).toBe(true);
+    expect(outcome.kind).toBe("NETWORK_UNAVAILABLE");
+    expect(outcome.message).toContain("Проверка заняла слишком много времени");
+  });
+
   it("keeps positive Results visible when analysis is partial but some pages were read", () => {
     const outcome = coverageOutcomeForResult({
       scanStatus: "COMPLETED",

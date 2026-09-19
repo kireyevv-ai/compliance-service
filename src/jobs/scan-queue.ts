@@ -18,6 +18,12 @@ import { crawlSite, type CrawlOptions } from "@/scanner/crawl/crawler";
 import type { CrawlResult } from "@/scanner/crawl/types";
 import { sanitizeScanFailureReason } from "@/scanner/url-safety/url-safety";
 import type { SemanticShadowEvaluation } from "@/semantic-evaluator/shadow";
+import {
+  createScanDeadline,
+  isScanDeadlineExceeded,
+  SCAN_TOTAL_TIMEOUT_REASON,
+  type ScanDeadline
+} from "@/jobs/scan-deadline";
 
 export type StaticExtractionScanResult =
   | {
@@ -84,6 +90,7 @@ export async function runStaticExtractionScanLifecycle(
     browserAuditOptions?: BrowserAuditOptions | false;
     externalServiceDetectionOptions?: { config?: Partial<ExternalServiceDetectionConfig> } | false;
     scanId?: string;
+    scanTotalTimeoutMs?: number;
     useSkipLocked?: boolean;
   }
 ): Promise<StaticExtractionScanResult | null> {
@@ -100,7 +107,8 @@ export async function runStaticExtractionScanLifecycle(
     startUrl: input.startUrl,
     crawlOptions: input.crawlOptions,
     browserAuditOptions: input.browserAuditOptions,
-    externalServiceDetectionOptions: input.externalServiceDetectionOptions
+    externalServiceDetectionOptions: input.externalServiceDetectionOptions,
+    scanTotalTimeoutMs: input.scanTotalTimeoutMs
   });
 }
 
@@ -112,12 +120,17 @@ export async function runClaimedStaticExtractionScan(
     crawlOptions?: CrawlOptions;
     browserAuditOptions?: BrowserAuditOptions | false;
     externalServiceDetectionOptions?: { config?: Partial<ExternalServiceDetectionConfig> } | false;
+    scanTotalTimeoutMs?: number;
   }
 ): Promise<StaticExtractionScanResult> {
   const scan = input.scan;
+  const deadline = createScanDeadline(input.scanTotalTimeoutMs);
+  let crawlResult: CrawlResult | null = null;
 
   try {
-    const crawlResult = await crawlSite(input.startUrl, input.crawlOptions);
+    deadline.throwIfExpired();
+    crawlResult = await crawlSite(input.startUrl, withDeadlineCrawlOptions(input.crawlOptions, deadline));
+    deadline.throwIfExpired();
     const extraction = extractStaticFacts(crawlResult.pages, {
       crawlCompleted: true,
       startUrl: crawlResult.startUrl,
@@ -135,8 +148,9 @@ export async function runClaimedStaticExtractionScan(
               staticExtraction: extraction,
               startUrl: crawlResult.startUrl
             },
-            input.browserAuditOptions
+            withDeadlineBrowserOptions(input.browserAuditOptions, deadline)
           );
+    deadline.throwIfExpired();
     const browserCoverage = browserExtraction.facts.find((fact) => fact.factType === "browser_audit_coverage");
     const browserCoverageValue = browserCoverage?.value as
       | { attempted?: unknown; completed?: unknown }
@@ -160,6 +174,7 @@ export async function runClaimedStaticExtractionScan(
     });
     const facts = await getFactsForScan(db, scan.id);
     const evidence = await getEvidenceForScan(db, scan.id);
+    deadline.throwIfExpired();
     const persistedEvaluations = await persistProductionFindings(db, {
       scan,
       facts,
@@ -176,6 +191,27 @@ export async function runClaimedStaticExtractionScan(
       semanticShadowResults: []
     };
   } catch (error) {
+    if (isScanDeadlineExceeded(error)) {
+      if (crawlResult && crawlResult.pages.length > 0) {
+        return persistPartialTimeoutResult(db, {
+          scan,
+          crawlResult,
+          crawlOptions: input.crawlOptions
+        });
+      }
+
+      const failed = await failScan(db, scan.id, SCAN_TOTAL_TIMEOUT_REASON);
+      return {
+        scan: failed,
+        crawlResult: null,
+        factCount: 0,
+        evidenceCount: 0,
+        browserPagesAttempted: 0,
+        browserPagesCompleted: 0,
+        semanticShadowResults: []
+      };
+    }
+
     const failed = await failScan(db, scan.id, sanitizeScanFailureReason(error));
     return {
       scan: failed,
@@ -186,5 +222,78 @@ export async function runClaimedStaticExtractionScan(
       browserPagesCompleted: 0,
       semanticShadowResults: []
     };
+  } finally {
+    deadline.dispose();
   }
+}
+
+async function persistPartialTimeoutResult(
+  db: Queryable,
+  input: {
+    scan: Scan;
+    crawlResult: CrawlResult;
+    crawlOptions?: CrawlOptions;
+  }
+): Promise<StaticExtractionScanResult> {
+  const extraction = extractStaticFacts(input.crawlResult.pages, {
+    crawlCompleted: true,
+    startUrl: input.crawlResult.startUrl,
+    maxPagesReached: true,
+    scanLimitationReason: SCAN_TOTAL_TIMEOUT_REASON
+  });
+  const derivedFacts = deriveRuntimeFacts({
+    facts: extraction.facts,
+    pages: input.crawlResult.pages,
+    startUrl: input.crawlResult.startUrl,
+    siteType: input.scan.siteType
+  });
+  const persisted = await persistStaticExtraction(db, input.scan.id, {
+    facts: [...extraction.facts, ...derivedFacts]
+  });
+  const facts = await getFactsForScan(db, input.scan.id);
+  const evidence = await getEvidenceForScan(db, input.scan.id);
+  await persistProductionFindings(db, {
+    scan: input.scan,
+    facts,
+    evidence,
+    semanticProvider: undefined
+  });
+
+  const completed = await completeScan(db, input.scan.id);
+  return {
+    scan: completed,
+    crawlResult: input.crawlResult,
+    ...persisted,
+    browserPagesAttempted: 0,
+    browserPagesCompleted: 0,
+    semanticShadowResults: []
+  };
+}
+
+function withDeadlineCrawlOptions(options: CrawlOptions | undefined, deadline: ScanDeadline): CrawlOptions {
+  const remaining = Math.max(1, deadline.remainingMs());
+  const config = {
+    ...options?.config,
+    requestTimeoutMs: Math.min(options?.config?.requestTimeoutMs ?? remaining, remaining),
+    totalTimeoutMs: Math.min(options?.config?.totalTimeoutMs ?? remaining, remaining)
+  };
+  return {
+    ...options,
+    config,
+    signal: deadline.signal
+  };
+}
+
+function withDeadlineBrowserOptions(options: BrowserAuditOptions | false | undefined, deadline: ScanDeadline): BrowserAuditOptions {
+  const base = options === false ? undefined : options;
+  const remaining = Math.max(1, deadline.remainingMs());
+  return {
+    ...base,
+    config: {
+      ...base?.config,
+      navigationTimeoutMs: Math.min(base?.config?.navigationTimeoutMs ?? remaining, remaining),
+      totalBrowserAuditTimeoutMs: Math.min(base?.config?.totalBrowserAuditTimeoutMs ?? remaining, remaining)
+    },
+    signal: deadline.signal
+  };
 }

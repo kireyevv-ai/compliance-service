@@ -7,12 +7,14 @@ import { assertUrlIsSafe } from "@/scanner/url-safety/url-safety";
 import { DEFAULT_BROWSER_AUDIT_CONFIG, type BrowserAuditConfig } from "./config";
 import { launchBrowser } from "./browser-runtime";
 import { isCheckoutLikePage, selectBrowserAuditPages } from "./page-selection";
+import { abortError } from "@/jobs/scan-deadline";
 
 export interface BrowserAuditOptions {
   config?: Partial<BrowserAuditConfig>;
   resolver?: HostResolver;
   browser?: Browser;
   routeHandler?: (route: Route) => Promise<void>;
+  signal?: AbortSignal;
 }
 
 type NetworkObservation = {
@@ -52,6 +54,12 @@ export async function runBrowserAudit(
   let browser = options.browser;
   let ownsBrowser = false;
   let context: BrowserContext | undefined;
+  const closeOnAbort = () => {
+    void context?.close().catch(() => undefined);
+    if (ownsBrowser) {
+      void browser?.close().catch(() => undefined);
+    }
+  };
 
   if (targetUrls.length === 0) {
     facts.push(browserCoverageFact(input.startUrl, targetUrls, 0, failures));
@@ -59,22 +67,29 @@ export async function runBrowserAudit(
   }
 
   try {
+    throwIfAborted(options.signal);
     if (!browser) {
       browser = await launchBrowser();
       ownsBrowser = true;
     }
 
     context = await browser.newContext({ ignoreHTTPSErrors: true, acceptDownloads: false });
+    options.signal?.addEventListener("abort", closeOnAbort, { once: true });
 
     let completed = 0;
     for (const url of targetUrls) {
+      const aborted = abortError(options.signal);
+      if (aborted) {
+        failures.push({ url, reason: aborted.message });
+        break;
+      }
       if (Date.now() > deadline) {
         failures.push({ url, reason: "Total browser audit timeout" });
         break;
       }
 
       try {
-        facts.push(...(await auditOnePage(context, url, normalized, resolver, config, options.routeHandler)));
+        facts.push(...(await auditOnePage(context, url, normalized, resolver, config, options.routeHandler, options.signal)));
         completed += 1;
       } catch (error) {
         failures.push({ url, reason: error instanceof Error ? error.message.slice(0, 160) : "Browser page audit failed" });
@@ -84,6 +99,7 @@ export async function runBrowserAudit(
     facts.push(browserCoverageFact(input.startUrl, targetUrls, completed, failures));
     return { facts };
   } finally {
+    options.signal?.removeEventListener("abort", closeOnAbort);
     await context?.close().catch(() => undefined);
     if (ownsBrowser) {
       await browser?.close().catch(() => undefined);
@@ -97,8 +113,10 @@ async function auditOnePage(
   normalized: NormalizedUrl,
   resolver: HostResolver,
   config: BrowserAuditConfig,
-  routeHandler?: (route: Route) => Promise<void>
+  routeHandler?: (route: Route) => Promise<void>,
+  signal?: AbortSignal
 ): Promise<ExtractedFact[]> {
+  throwIfAborted(signal);
   await assertNavigableUrl(url, normalized, resolver);
   const page = await context.newPage();
   const observations = new Map<string, NetworkObservation>();
@@ -134,7 +152,15 @@ async function auditOnePage(
     }
 
     if (routeHandler) {
-      await routeHandler(route);
+      try {
+        await withAbort(routeHandler(route), signal, () => route.abort("blockedbyclient").catch(() => undefined));
+      } catch (error) {
+        if (abortError(signal)) {
+          await route.abort("blockedbyclient").catch(() => undefined);
+          return;
+        }
+        throw error;
+      }
       return;
     }
 
@@ -142,17 +168,53 @@ async function auditOnePage(
   });
 
   try {
+    throwIfAborted(signal);
     const response = await page.goto(url, {
       waitUntil: "domcontentloaded",
       timeout: config.navigationTimeoutMs
     });
     const finalUrl = response?.url() ?? page.url();
     await assertNavigableUrl(finalUrl, normalized, resolver);
+    throwIfAborted(signal);
     await page.waitForTimeout(config.settleDelayMs);
+    throwIfAborted(signal);
     return await extractRenderedFacts(page, url, observations, config);
   } finally {
     await page.close().catch(() => undefined);
   }
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  const error = abortError(signal);
+  if (error) {
+    throw error;
+  }
+}
+
+function withAbort<T>(operation: Promise<T>, signal?: AbortSignal, onAbort?: () => void): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const aborted = abortError(signal);
+    if (aborted) {
+      reject(aborted);
+      return;
+    }
+
+    const abort = () => {
+      onAbort?.();
+      reject(abortError(signal) ?? new Error("Operation aborted"));
+    };
+    signal?.addEventListener("abort", abort, { once: true });
+    operation.then(
+      (result) => {
+        signal?.removeEventListener("abort", abort);
+        resolve(result);
+      },
+      (error) => {
+        signal?.removeEventListener("abort", abort);
+        reject(error);
+      }
+    );
+  });
 }
 
 async function extractRenderedFacts(

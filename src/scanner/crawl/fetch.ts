@@ -5,6 +5,7 @@ import type { CrawlConfig } from "./config";
 import { assertUrlIsSafe } from "@/scanner/url-safety/url-safety";
 import { dnsHostResolver, type HostResolver, type ResolvedAddress } from "@/scanner/url-safety/resolver";
 import { isBlockedIpAddress } from "@/scanner/url-safety/ip";
+import { abortError } from "@/jobs/scan-deadline";
 
 export interface FetchPageResponse {
   url: string;
@@ -31,7 +32,8 @@ export interface FetchTransportResponse {
 export type FetchTransport = (
   url: URL,
   address: ResolvedAddress,
-  config: CrawlConfig
+  config: CrawlConfig,
+  signal?: AbortSignal
 ) => Promise<FetchTransportResponse>;
 
 export const RESPONSE_BODY_TOO_LARGE = "RESPONSE_BODY_TOO_LARGE";
@@ -42,9 +44,17 @@ export async function fetchPage(
   options: {
     resolver?: HostResolver;
     transport?: FetchTransport;
+    signal?: AbortSignal;
   } = {}
 ): Promise<FetchPageResponse> {
-  return fetchPageWithRedirects(inputUrl, config, options.resolver ?? dnsHostResolver, options.transport ?? nodeTransport, 0);
+  return fetchPageWithRedirects(
+    inputUrl,
+    config,
+    options.resolver ?? dnsHostResolver,
+    options.transport ?? nodeTransport,
+    options.signal,
+    0
+  );
 }
 
 async function fetchPageWithRedirects(
@@ -52,8 +62,14 @@ async function fetchPageWithRedirects(
   config: CrawlConfig,
   resolver: HostResolver,
   transport: FetchTransport,
+  signal: AbortSignal | undefined,
   redirectCount: number
 ): Promise<FetchPageResponse> {
+  const aborted = abortError(signal);
+  if (aborted) {
+    throw aborted;
+  }
+
   if (redirectCount > config.maxRedirects) {
     throw new Error("Too many redirects");
   }
@@ -61,12 +77,12 @@ async function fetchPageWithRedirects(
   const safe = await assertUrlIsSafe(inputUrl, resolver);
   const address = safe.addresses[0];
 
-  const response = await transport(safe.url, address, config);
+  const response = await transport(safe.url, address, config, signal);
   const location = response.headers.location;
 
   if (response.status >= 300 && response.status < 400 && location) {
     const redirectUrl = new URL(Array.isArray(location) ? location[0] : location, safe.url);
-    return fetchPageWithRedirects(redirectUrl.toString(), config, resolver, transport, redirectCount + 1);
+    return fetchPageWithRedirects(redirectUrl.toString(), config, resolver, transport, signal, redirectCount + 1);
   }
 
   return {
@@ -85,9 +101,16 @@ async function fetchPageWithRedirects(
 function nodeTransport(
   url: URL,
   address: ResolvedAddress,
-  config: CrawlConfig
+  config: CrawlConfig,
+  signal?: AbortSignal
 ): Promise<FetchTransportResponse> {
   return new Promise((resolve, reject) => {
+    const aborted = abortError(signal);
+    if (aborted) {
+      reject(aborted);
+      return;
+    }
+
     const client = url.protocol === "https:" ? https : http;
     let receivedBytes = 0;
     let settled = false;
@@ -150,10 +173,18 @@ function nodeTransport(
     request.on("timeout", () => {
       request.destroy(new Error("HTTP request timeout"));
     });
+    const onAbort = () => {
+      request.destroy(abortError(signal) ?? new Error("Operation aborted"));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
     request.on("error", (error) => {
+      signal?.removeEventListener("abort", onAbort);
       if (!settled) {
         reject(error);
       }
+    });
+    request.on("close", () => {
+      signal?.removeEventListener("abort", onAbort);
     });
     request.end();
   });

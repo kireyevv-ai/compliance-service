@@ -990,6 +990,8 @@ function pushCoverageAndCompletedAggregates(
   ).length;
   const httpErrorPages = pages.filter((page) => page.status >= 400 || page.status === 0).length;
   const limitation = detectContentLimitation(pages);
+  const contentLimited = limitation.contentLimited || Boolean(options.scanLimitationReason && successfulHtmlPages === 0);
+  const limitationReason = limitation.limitationReason ?? options.scanLimitationReason ?? null;
   const limitedPages = pages
     .filter((page) => page.contentLimited)
     .map((page) => ({
@@ -1007,19 +1009,19 @@ function pushCoverageAndCompletedAggregates(
       successfulHtmlPages,
       httpErrorPages,
       maxPagesReached: Boolean(options.maxPagesReached),
-      contentLimited: limitation.contentLimited,
-      limitationReason: limitation.limitationReason,
+      contentLimited,
+      limitationReason,
       limitedPages
     },
     evidence: [
       textEvidence(evidencePageUrl, {
           kind: "scan_coverage",
-          context: `Static extraction processed ${pages.length} crawled page(s). crawlCompleted=${options.crawlCompleted}; successfulHtmlPages=${successfulHtmlPages}; httpErrorPages=${httpErrorPages}; maxPagesReached=${Boolean(options.maxPagesReached)}; contentLimited=${limitation.contentLimited}.`
+          context: `Static extraction processed ${pages.length} crawled page(s). crawlCompleted=${options.crawlCompleted}; successfulHtmlPages=${successfulHtmlPages}; httpErrorPages=${httpErrorPages}; maxPagesReached=${Boolean(options.maxPagesReached)}; contentLimited=${contentLimited}; limitationReason=${limitationReason ?? "none"}.`
       })
     ]
   });
 
-  if (!options.crawlCompleted || limitation.contentLimited) {
+  if (!options.crawlCompleted || contentLimited) {
     return;
   }
 

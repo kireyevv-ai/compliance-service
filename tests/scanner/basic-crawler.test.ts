@@ -6,6 +6,7 @@ import type { Queryable } from "@/db/client";
 import {
   createQueuedScan,
   createSite,
+  getScanById,
   upsertUser
 } from "@/db/repository";
 import { crawlSite } from "@/scanner/crawl/crawler";
@@ -19,6 +20,7 @@ import type { HostResolver } from "@/scanner/url-safety/resolver";
 import { runCrawlerScanLifecycle } from "@/jobs/scan-queue";
 import { getFactsForScan, getFindingsForScan } from "@/db/repository";
 import { runStaticExtractionScanLifecycle } from "@/jobs/scan-queue";
+import { coverageOutcomeForResult } from "@/app/results/presentation";
 
 function createTestDb(): Queryable {
   const db = newDb();
@@ -428,7 +430,262 @@ describe("basic crawler", () => {
     expect(result?.scan.statusReason).toBe("HTTP request timeout");
     expect(result?.crawlResult).toBeNull();
   });
+
+  it("ends a static scan when the first request outlives the scan budget", async () => {
+    const db = createTestDb();
+    const user = await upsertUser(db, { email: "dev@example.test" });
+    const site = await createSite(db, {
+      userId: user.id,
+      url: "https://example.test",
+      normalizedDomain: "example.test"
+    });
+    const scan = await createQueuedScan(db, {
+      siteId: site.id,
+      siteType: "OTHER",
+      scannerVersion: "crawler-test"
+    });
+    let aborted = false;
+
+    const result = await runStaticExtractionScanLifecycle(db, {
+      scanId: scan.id,
+      startUrl: "https://example.test",
+      scanTotalTimeoutMs: 25,
+      browserAuditOptions: false,
+      externalServiceDetectionOptions: false,
+      crawlOptions: {
+        config: { requestTimeoutMs: 1_000, totalTimeoutMs: 1_000 },
+        resolver: publicResolver(),
+        transport: (_url, _address, _config, signal) =>
+          new Promise<FetchTransportResponse>((_resolve, reject) => {
+            signal?.addEventListener("abort", () => {
+              aborted = true;
+              reject(signal.reason);
+            });
+          })
+      }
+    });
+    const stored = await getScanById(db, scan.id);
+
+    expect(aborted).toBe(true);
+    expect(result?.scan.status).toBe("FAILED");
+    expect(result?.scan.statusReason).toBe("SCAN_TOTAL_TIMEOUT");
+    expect(stored?.status).toBe("FAILED");
+    expect(result?.crawlResult).toBeNull();
+    expect(await getFindingsForScan(db, scan.id)).toHaveLength(0);
+  });
+
+  it("uses the scan-level deadline during browser audit with zero usable static coverage", async () => {
+    const previousTimeout = process.env.SCAN_TOTAL_TIMEOUT_MS;
+    process.env.SCAN_TOTAL_TIMEOUT_MS = "80";
+    const db = createTestDb();
+    const user = await upsertUser(db, { email: "dev@example.test" });
+    const site = await createSite(db, {
+      userId: user.id,
+      url: "https://example.test",
+      normalizedDomain: "example.test"
+    });
+    const scan = await createQueuedScan(db, {
+      siteId: site.id,
+      siteType: "B2B",
+      scannerVersion: "crawler-test"
+    });
+    const fakeBrowser = createHangingBrowser();
+
+    try {
+      const result = await runStaticExtractionScanLifecycle(db, {
+        scanId: scan.id,
+        startUrl: "https://example.test",
+        externalServiceDetectionOptions: false,
+        crawlOptions: {
+          config: { requestTimeoutMs: 1_000, totalTimeoutMs: 1_000 },
+          resolver: publicResolver(),
+          transport: transportFor({
+            "https://example.test/": {
+              status: 200,
+              headers: htmlHeaders,
+              body: ""
+            }
+          })
+        },
+        browserAuditOptions: {
+          browser: fakeBrowser.browser,
+          config: { maxBrowserPages: 1, navigationTimeoutMs: 1_000, totalBrowserAuditTimeoutMs: 1_000 },
+          resolver: publicResolver(),
+          routeHandler: () => new Promise(() => undefined)
+        }
+      });
+      const stored = await getScanById(db, scan.id);
+      const facts = await getFactsForScan(db, scan.id);
+      const coverage = facts.find((fact) => fact.factType === "scan_coverage");
+      const findings = await getFindingsForScan(db, scan.id);
+      const outcome = coverageOutcomeForResult({
+        scanStatus: result?.scan.status ?? "FAILED",
+        statusReason: result?.scan.statusReason ?? null,
+        coverage: coverage?.value
+      });
+
+      expect(result?.scan.status).toBe("COMPLETED");
+      expect(stored?.status).not.toBe("RUNNING");
+      expect(coverage?.value).toMatchObject({
+        successfulHtmlPages: 0,
+        contentLimited: true,
+        limitationReason: "SCAN_TOTAL_TIMEOUT",
+        maxPagesReached: true
+      });
+      expect(outcome.kind).toBe("NETWORK_UNAVAILABLE");
+      expect(outcome.blocksResults).toBe(true);
+      expect(findings).toHaveLength(0);
+      expect(fakeBrowser.closedContexts()).toBe(1);
+    } finally {
+      if (previousTimeout === undefined) {
+        delete process.env.SCAN_TOTAL_TIMEOUT_MS;
+      } else {
+        process.env.SCAN_TOTAL_TIMEOUT_MS = previousTimeout;
+      }
+    }
+  }, 20_000);
+
+  it("keeps a partial terminal result when the scan budget expires after static pages were read", async () => {
+    const previousTimeout = process.env.SCAN_TOTAL_TIMEOUT_MS;
+    process.env.SCAN_TOTAL_TIMEOUT_MS = "80";
+    const db = createTestDb();
+    const user = await upsertUser(db, { email: "dev@example.test" });
+    const site = await createSite(db, {
+      userId: user.id,
+      url: "https://example.test",
+      normalizedDomain: "example.test"
+    });
+    const scan = await createQueuedScan(db, {
+      siteId: site.id,
+      siteType: "B2B",
+      scannerVersion: "crawler-test"
+    });
+    const fakeBrowser = createHangingBrowser();
+
+    try {
+      const result = await runStaticExtractionScanLifecycle(db, {
+        scanId: scan.id,
+        startUrl: "https://example.test",
+        externalServiceDetectionOptions: false,
+        crawlOptions: {
+          config: { requestTimeoutMs: 500, totalTimeoutMs: 500 },
+          resolver: publicResolver(),
+          transport: transportFor({
+            "https://example.test/": {
+              status: 200,
+              headers: htmlHeaders,
+              body: "<html><body><form><input name=\"email\"></form></body></html>"
+            }
+          })
+        },
+        browserAuditOptions: {
+          browser: fakeBrowser.browser,
+          config: { maxBrowserPages: 1, navigationTimeoutMs: 1_000, totalBrowserAuditTimeoutMs: 1_000 },
+          resolver: publicResolver(),
+          routeHandler: () => new Promise(() => undefined)
+        }
+      });
+      const stored = await getScanById(db, scan.id);
+      const coverage = (await getFactsForScan(db, scan.id)).find((fact) => fact.factType === "scan_coverage");
+      const findings = await getFindingsForScan(db, scan.id);
+
+      expect(result?.scan.status).toBe("COMPLETED");
+      expect(stored?.status).not.toBe("RUNNING");
+      expect(result?.crawlResult?.pages).toHaveLength(1);
+      expect(coverage?.value).toMatchObject({
+        successfulHtmlPages: 1,
+        maxPagesReached: true,
+        limitationReason: "SCAN_TOTAL_TIMEOUT"
+      });
+      expect(findings.some((finding) => finding.status === "PASS" || finding.status === "FAIL")).toBe(false);
+      expect(fakeBrowser.closedContexts()).toBe(1);
+    } finally {
+      if (previousTimeout === undefined) {
+        delete process.env.SCAN_TOTAL_TIMEOUT_MS;
+      } else {
+        process.env.SCAN_TOTAL_TIMEOUT_MS = previousTimeout;
+      }
+    }
+  }, 20_000);
 });
+
+function createHangingBrowser() {
+  let closedContextCount = 0;
+  const contexts: Array<{ closed: boolean; close: () => Promise<void> }> = [];
+  const browser = {
+    async newContext() {
+      const pages: Array<{ close: () => Promise<void>; failNavigation: () => void }> = [];
+      const context = {
+        closed: false,
+        async newPage() {
+          let routeHandler: ((route: unknown) => Promise<void>) | undefined;
+          let rejectNavigation: ((error: Error) => void) | undefined;
+          const page = {
+            on() {
+              return undefined;
+            },
+            async route(_pattern: string, handler: (route: unknown) => Promise<void>) {
+              routeHandler = handler;
+            },
+            async goto() {
+              return new Promise((_resolve, reject) => {
+                rejectNavigation = reject;
+                void routeHandler?.({
+                  request: () => ({
+                    url: () => "https://example.test/",
+                    isNavigationRequest: () => true,
+                    resourceType: () => "document"
+                  }),
+                  abort: async () => reject(new Error("blockedbyclient")),
+                  continue: async () => undefined
+                });
+              });
+            },
+            url() {
+              return "https://example.test/";
+            },
+            async waitForTimeout() {
+              return undefined;
+            },
+            async evaluate() {
+              return {};
+            },
+            async close() {
+              rejectNavigation?.(new Error("page closed"));
+            },
+            failNavigation() {
+              rejectNavigation?.(new Error("context closed"));
+            }
+          };
+          pages.push(page);
+          return page;
+        },
+        async close() {
+          if (!context.closed) {
+            context.closed = true;
+            closedContextCount += 1;
+            for (const page of pages) {
+              page.failNavigation();
+            }
+          }
+        }
+      };
+      contexts.push(context);
+      return context;
+    },
+    contexts() {
+      return contexts.filter((context) => !context.closed);
+    },
+    async close() {
+      await Promise.all(contexts.map((context) => context.close()));
+    }
+  };
+
+  return {
+    browser: browser as never,
+    closedContexts: () => closedContextCount
+  };
+}
 
 function defaultFastConfig() {
   return {
