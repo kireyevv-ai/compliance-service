@@ -18,12 +18,14 @@ function semanticResponse(observation: SemanticObservation, request: SemanticMod
 
 describe("pilot semantic benchmark", () => {
   it("contains at least 8 synthetic cases per pilot rule", () => {
-    expect(PILOT_BENCHMARK_CASES).toHaveLength(128);
+    expect(PILOT_BENCHMARK_CASES).toHaveLength(144);
     for (const ruleId of [
       "PD-005",
       "PD-008",
       "PD-009",
       "PD-010",
+      "CK-001",
+      "CK-004",
       "PD-013",
       "PD-014",
       "PD-015",

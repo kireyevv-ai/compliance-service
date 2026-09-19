@@ -90,6 +90,10 @@ function evaluateBuiltin(ruleId: string, index: FactIndex): BuiltinEvaluation {
       return evaluatePd020(index);
     case "PD-021":
       return evaluatePd021(index);
+    case "CK-002":
+      return evaluateCk002(index);
+    case "CK-003":
+      return evaluateCk003(index);
     case "EC-001":
       return evaluateEc001(index);
     case "EC-002":
@@ -355,6 +359,53 @@ function evaluatePd011(index: FactIndex): BuiltinEvaluation {
       ...matched.map((item) => item.checked).filter((fact): fact is Fact => Boolean(fact))
     ]),
     explanation: "Согласие на рекламные или маркетинговые сообщения найдено и не отмечено заранее."
+  };
+}
+
+function evaluateCk002(index: FactIndex): BuiltinEvaluation {
+  const controls = consentControlsWithText(index).filter((item) => isCookieOrTrackingConsentText(item.text));
+  if (controls.length === 0) {
+    return noBuiltin("Optional cookie, analytics, or marketing consent control was not observed");
+  }
+
+  const checkedByControl = checkedFactsByControl(index, "rendered_consent_checked");
+  const matched = controls.map((item) => ({ ...item, checked: checkedByControl.get(controlKey(item.control)) }));
+  if (matched.some((item) => !item.checked)) {
+    return noBuiltin("Cookie, analytics, or marketing consent checked state was not fully observed");
+  }
+
+  const preselected = matched.find((item) => item.checked?.value.checked === true);
+  if (preselected) {
+    return {
+      status: "FAIL",
+      evidenceFactTypes: [],
+      evidenceIds: collectEvidenceIdsForFacts(index, [
+        preselected.control,
+        preselected.textFact,
+        preselected.checked!
+      ]),
+      explanation: "На сайте найдено согласие на cookie, аналитику или маркетинговые технологии, заранее отмеченное для пользователя."
+    };
+  }
+
+  return {
+    status: "PASS",
+    evidenceIds: collectEvidenceIdsForFacts(index, matched.flatMap((item) => [item.control, item.textFact, item.checked! ])),
+    explanation: "Согласие на cookie, аналитику или маркетинговые технологии найдено и не отмечено заранее."
+  };
+}
+
+function evaluateCk003(index: FactIndex): BuiltinEvaluation {
+  const signals = marketingOrAdTrackerSignals(index);
+  if (signals.length === 0) {
+    return noBuiltin("Marketing, advertising, or analytics tracker signal was not observed before user interaction");
+  }
+
+  return {
+    status: "MANUAL_CHECK",
+    evidenceFactTypes: [],
+    evidenceIds: collectEvidenceIdsForFacts(index, signals),
+    explanation: "До выбора пользователя обнаружены признаки маркетинговых, рекламных или аналитических технологий. Без проверки поведения баннера после выбора нельзя надёжно оценить, блокируются ли такие технологии."
   };
 }
 
@@ -810,6 +861,53 @@ function checkedFactsByControl(index: FactIndex, factType: string): Map<string, 
     result.set(controlKey(fact), fact);
   }
   return result;
+}
+
+function consentControlsWithText(index: FactIndex): Array<{ control: Fact; textFact: Fact; text: string }> {
+  const textByControl = checkedFactsByControl(index, "rendered_consent_text");
+  return factsByType(index, "rendered_consent_control_found")
+    .map((control) => {
+      const textFact = textByControl.get(controlKey(control));
+      const text = typeof textFact?.value.text === "string" ? textFact.value.text : undefined;
+      return textFact && text ? { control, textFact, text } : undefined;
+    })
+    .filter((item): item is { control: Fact; textFact: Fact; text: string } => Boolean(item));
+}
+
+function isCookieOrTrackingConsentText(text: string): boolean {
+  const normalized = text.toLowerCase();
+  const hasRelevantContext =
+    /(cookie|cookies|куки|cookie-файл|файл[а-я\s-]*cookie|аналитик|analytics|метрик|маркетинг|маркетингов|реклам|рассыл|трекер|tracking|статистик)/i.test(
+      normalized
+    );
+  const onlyMandatoryPersonalData =
+    /(персональн[а-я\s-]*данн|обработк[а-я\s-]*данн)/i.test(normalized) &&
+    !/(cookie|cookies|куки|аналитик|analytics|метрик|маркетинг|маркетингов|реклам|рассыл|трекер|tracking|статистик)/i.test(
+      normalized
+    );
+  return hasRelevantContext && !onlyMandatoryPersonalData;
+}
+
+function marketingOrAdTrackerSignals(index: FactIndex): Fact[] {
+  const externalServices = factsByType(index, "external_service_matches").filter((fact) =>
+    isMarketingOrAdTrackerText([fact.value.category, fact.value.service_name, fact.value.matched_host].join(" "))
+  );
+  const networkHosts = factsByType(index, "network_request_hosts").filter((fact) =>
+    isMarketingOrAdTrackerText(JSON.stringify(fact.value))
+  );
+  const scriptSources = factsByType(index, "script_sources_rendered").filter((fact) =>
+    isMarketingOrAdTrackerText(JSON.stringify(fact.value))
+  );
+  const iframeSources = factsByType(index, "iframe_sources_rendered").filter((fact) =>
+    isMarketingOrAdTrackerText(JSON.stringify(fact.value))
+  );
+  return [...externalServices, ...networkHosts, ...scriptSources, ...iframeSources];
+}
+
+function isMarketingOrAdTrackerText(text: string): boolean {
+  return /(advert|ads?|doubleclick|googletagmanager|google-analytics|analytics|metrika|метрик|mc\.yandex|facebook|fbp|fbc|retarget|remarket|pixel|marketing|email_marketing|vk\.com\/rtrg|top-fwz1\.mail\.ru|roistat)/i.test(
+    text
+  );
 }
 
 function controlKey(fact: Fact): string {

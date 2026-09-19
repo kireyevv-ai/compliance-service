@@ -637,6 +637,107 @@ describe("pilot semantic rules shadow mode", () => {
     expect(provider.requests).toHaveLength(0);
   });
 
+  it("evaluates CK-001 only with relevant cookie or tracker evidence and policy text", async () => {
+    const provider = goldenProvider();
+    const cookies = structuredFixture("ck001-cookies", "cookie_metadata", {
+      cookieNames: ["_ga", "_ym_uid"]
+    });
+    const policy = policyFixtureWithText("ck001-policy", "GOLDEN_PASS Политика раскрывает cookie и аналитические идентификаторы.");
+
+    const [result] = await evaluateSemanticRulesShadow({
+      scan,
+      facts: [cookies.fact, policy.fact],
+      evidence: [cookies.evidence, policy.evidence],
+      rules: ruleOnly("CK-001"),
+      provider
+    });
+
+    expect(result.status).toBe("PASS");
+    expect(provider.requests[0].evidence.map((item) => item.ref)).toEqual([
+      `cookie_metadata:${cookies.evidence.id}`,
+      `privacy_policy_text:${policy.evidence.id}`
+    ]);
+    expect(provider.requests[0].evidence[0].excerpt).toContain("_ga");
+  });
+
+  it("does not evaluate CK-001 for ordinary technical cookies only", async () => {
+    const provider = goldenProvider();
+    const cookies = structuredFixture("ck001-technical-cookie", "cookie_metadata", {
+      cookieNames: ["csrf_token"]
+    });
+    const policy = policyFixtureWithText("ck001-technical-policy", "GOLDEN_FAIL Политика не упоминает cookie.");
+
+    const [result] = await evaluateSemanticRulesShadow({
+      scan,
+      facts: [cookies.fact, policy.fact],
+      evidence: [cookies.evidence, policy.evidence],
+      rules: ruleOnly("CK-001"),
+      provider
+    });
+
+    expect(result.status).toBe("NO_EVALUATION");
+    expect(provider.requests).toHaveLength(0);
+  });
+
+  it("keeps CK-001 absence as MANUAL_CHECK when policy evidence is incomplete", async () => {
+    const provider = goldenProvider();
+    const cookies = structuredFixture("ck001-incomplete-cookies", "cookie_metadata", {
+      cookieNames: ["_ga"]
+    });
+    const policy = policyFixtureWithText("ck001-incomplete-policy", "GOLDEN_FAIL Раздел о cookie приведён далее.");
+    policy.fact.value = { ...policy.fact.value, semanticCompleteness: "PARTIAL" };
+    policy.evidence.payload = { ...policy.evidence.payload, semanticCompleteness: "PARTIAL" };
+
+    const [result] = await evaluateSemanticRulesShadow({
+      scan,
+      facts: [cookies.fact, policy.fact],
+      evidence: [cookies.evidence, policy.evidence],
+      rules: ruleOnly("CK-001"),
+      provider
+    });
+
+    expect(result.status).toBe("MANUAL_CHECK");
+    expect(result.result).toMatchObject({ observation: "ABSENT" });
+  });
+
+  it("evaluates CK-004 for cookie consent bundled with mandatory terms", async () => {
+    const provider = goldenProvider();
+    const consent = structuredFixture("ck004-consent", "rendered_consent_text", {
+      text: "GOLDEN_FAIL Один обязательный флажок: принимаю оферту и соглашаюсь на cookie для аналитики.",
+      formIndex: 0,
+      controlIndex: 1
+    });
+
+    const [result] = await evaluateSemanticRulesShadow({
+      scan,
+      facts: [consent.fact],
+      evidence: [consent.evidence],
+      rules: ruleOnly("CK-004"),
+      provider
+    });
+
+    expect(result.status).toBe("FAIL");
+    expect(provider.requests).toHaveLength(1);
+  });
+
+  it("does not evaluate CK-004 from cookie evidence without consent wording", async () => {
+    const provider = goldenProvider();
+    const cookies = structuredFixture("ck004-cookie-only", "cookie_metadata", {
+      cookieNames: ["_ga"]
+    });
+
+    const [result] = await evaluateSemanticRulesShadow({
+      scan,
+      facts: [cookies.fact],
+      evidence: [cookies.evidence],
+      rules: ruleOnly("CK-004"),
+      provider
+    });
+
+    expect(result.status).toBe("NO_EVALUATION");
+    expect(provider.requests).toHaveLength(0);
+  });
+
   it("keeps deterministic evaluation separate from semantic shadow mode", async () => {
     const deterministicEvaluations = evaluateRulesForScan({
       scan,

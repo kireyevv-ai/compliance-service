@@ -340,6 +340,21 @@ function userFacingEvidenceDetail(
     return "Форма сбора персональных данных";
   }
 
+  const cookieNames = textValue(payload.cookieNames ?? payload.names ?? payload.cookies);
+  if (cookieNames) {
+    return `Обнаружены cookie: ${cookieNames}`;
+  }
+
+  const storageKeys = textValue(payload.keys);
+  if (storageKeys && textValue(payload.kind)?.includes("storage")) {
+    return `Обнаружены ключи хранилища браузера: ${storageKeys}`;
+  }
+
+  const hosts = textValue(payload.hosts);
+  if (hosts) {
+    return `Обнаружены внешние запросы: ${hosts}`;
+  }
+
   const amount = numberValue(payload.amount);
   const currencyMarker = textValue(payload.currencyMarker);
   if (amount !== undefined && currencyMarker) {

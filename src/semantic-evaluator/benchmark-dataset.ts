@@ -6,6 +6,8 @@ export type PilotBenchmarkRuleId =
   | "PD-008"
   | "PD-009"
   | "PD-010"
+  | "CK-001"
+  | "CK-004"
   | "PD-013"
   | "PD-014"
   | "PD-015"
@@ -27,6 +29,10 @@ export interface BenchmarkEvidence {
     | "privacy_policy_text"
     | "marketing_consent_control_found"
     | "rendered_marketing_consent_found"
+    | "rendered_consent_text"
+    | "cookie_metadata"
+    | "local_storage_keys"
+    | "network_request_hosts"
     | "form_fields"
     | "external_service_matches"
     | "consumer_page_text"
@@ -91,6 +97,24 @@ export const PILOT_BENCHMARK_CASES: PilotBenchmarkCase[] = [
   c("PD-010-F03", "PD-010", "FAIL", "ABSENT", "Marketing is bundled into user agreement acceptance.", marketing("Принимаю пользовательское соглашение, включая согласие на маркетинговые сообщения.", "COMPLETE")),
   c("PD-010-M01", "PD-010", "MANUAL_CHECK", "ABSENT", "Partial fragment cannot prove marketing consent separation.", marketing("Согласен получать сообщения.", "PARTIAL")),
   c("PD-010-M02", "PD-010", "MANUAL_CHECK", "AMBIGUOUS", "Wording is marketing-like but separation is unclear.", marketing("Подтверждаю согласие на условия и уведомления сайта.")),
+
+  cMany("CK-001-P01", "CK-001", "PASS", "PRESENT", "Policy discloses analytics cookies and purposes.", [cookieEvidence("Browser cookies: _ga, _gid. Network host: google-analytics.com.", "COMPLETE"), policy("Политика сообщает об использовании cookie и идентификаторов аналитики для статистики посещений.", false, "COMPLETE")]),
+  cMany("CK-001-P02", "CK-001", "PASS", "PRESENT", "Policy discloses advertising identifiers.", [cookieEvidence("Browser cookies: _fbp. External advertising pixel detected.", "COMPLETE"), policy("В политике указаны рекламные cookie и пиксели для показа релевантной рекламы.", false, "COMPLETE")]),
+  cMany("CK-001-P03", "CK-001", "PASS", "PRESENT", "Policy discloses marketing storage identifiers by category.", [storageEvidence("localStorage keys: marketingClientId, visitorId.", "COMPLETE"), policy("Сайт использует идентификаторы браузера для маркетинговых коммуникаций и персонализации.", false, "COMPLETE")]),
+  cMany("CK-001-F01", "CK-001", "FAIL", "ABSENT", "Complete policy omits analytics cookies.", [cookieEvidence("Browser cookies: _ym_uid. External analytics service Yandex Metrica detected.", "COMPLETE"), policy("Политика описывает только обработку заявок и не упоминает cookie, аналитику, идентификаторы или технологии отслеживания.", false, "COMPLETE")]),
+  cMany("CK-001-F02", "CK-001", "FAIL", "ABSENT", "Complete policy omits advertising tracker identifiers.", [cookieEvidence("Browser cookies: _fbp, _fbc. Advertising pixel detected.", "COMPLETE"), policy("Политика описывает цели заказа и обратной связи без сведений о рекламных технологиях или идентификаторах.", false, "COMPLETE")]),
+  cMany("CK-001-F03", "CK-001", "FAIL", "ABSENT", "Complete policy omits storage-based tracking.", [storageEvidence("localStorage keys: analytics_uid, visitor_tracking_id.", "COMPLETE"), policy("Политика не содержит сведений о cookie, локальном хранилище, аналитике или отслеживании.", false, "COMPLETE")]),
+  cMany("CK-001-M01", "CK-001", "MANUAL_CHECK", "ABSENT", "Incomplete policy cannot prove omission.", [cookieEvidence("Browser cookies: _ga.", "COMPLETE"), policy("Раздел о cookie приведён далее.", true, "TRUNCATED")]),
+  cMany("CK-001-M02", "CK-001", "MANUAL_CHECK", "AMBIGUOUS", "Policy wording is too generic.", [cookieEvidence("Browser cookies: session_id, visitorId.", "UNKNOWN"), policy("Сайт может использовать технические файлы для работы сервиса.")]),
+
+  c("CK-004-P01", "CK-004", "PASS", "PRESENT", "Cookie consent has a separate optional checkbox.", renderedConsent("Флажок 1: принимаю оферту. Флажок 2: необязательно согласен на cookie аналитики.")),
+  c("CK-004-P02", "CK-004", "PASS", "PRESENT", "Analytics consent is separate from personal-data consent.", renderedConsent("Флажок 1: согласен на обработку персональных данных. Флажок 2: согласен на использование аналитических cookie.")),
+  c("CK-004-P03", "CK-004", "PASS", "PRESENT", "Marketing tracking consent is optional and separate.", renderedConsent("Отдельный необязательный флажок: разрешаю маркетинговые технологии и рекламные cookie.")),
+  c("CK-004-F01", "CK-004", "FAIL", "ABSENT", "One mandatory checkbox combines offer and analytics cookies.", renderedConsent("Один обязательный флажок: принимаю оферту и соглашаюсь на cookie аналитики.", "COMPLETE")),
+  c("CK-004-F02", "CK-004", "FAIL", "ABSENT", "One control combines PD consent and marketing trackers.", renderedConsent("Один флажок: согласен на обработку персональных данных и рекламные cookie.", "COMPLETE")),
+  c("CK-004-F03", "CK-004", "FAIL", "ABSENT", "Tracking consent is bundled into user agreement.", renderedConsent("Принимаю пользовательское соглашение, включая согласие на аналитические и маркетинговые технологии.", "COMPLETE")),
+  c("CK-004-M01", "CK-004", "MANUAL_CHECK", "ABSENT", "Partial fragment cannot prove bundling.", renderedConsent("Согласен с условиями и cookie.", "PARTIAL")),
+  c("CK-004-M02", "CK-004", "MANUAL_CHECK", "AMBIGUOUS", "Wording is unclear.", renderedConsent("Подтверждаю настройки сайта и условия.")),
 
   c("PD-013-P01", "PD-013", "PASS", "PRESENT", "Policy lists communication and service purposes.", policy("Оператор обрабатывает персональные данные для ответа на обращения, предоставления сервиса и исполнения договора с пользователем.")),
   c("PD-013-P02", "PD-013", "PASS", "PRESENT", "Policy lists order and support purposes.", policy("Целями обработки являются оформление заказов, доставка, клиентская поддержка и направление сервисных уведомлений.")),
@@ -257,6 +281,18 @@ function consent(excerpt: string, completeness: SemanticEvidenceCompleteness = "
 
 function marketing(excerpt: string, completeness: SemanticEvidenceCompleteness = "UNKNOWN"): BenchmarkEvidence {
   return { factType: "marketing_consent_control_found", excerpt, completeness };
+}
+
+function renderedConsent(excerpt: string, completeness: SemanticEvidenceCompleteness = "UNKNOWN"): BenchmarkEvidence {
+  return { factType: "rendered_consent_text", excerpt, completeness };
+}
+
+function cookieEvidence(excerpt: string, completeness: SemanticEvidenceCompleteness = "UNKNOWN"): BenchmarkEvidence {
+  return { factType: "cookie_metadata", excerpt, completeness };
+}
+
+function storageEvidence(excerpt: string, completeness: SemanticEvidenceCompleteness = "UNKNOWN"): BenchmarkEvidence {
+  return { factType: "local_storage_keys", excerpt, completeness };
 }
 
 function form(excerpt: string, completeness: SemanticEvidenceCompleteness = "COMPLETE"): BenchmarkEvidence {

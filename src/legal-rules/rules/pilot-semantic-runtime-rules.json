@@ -108,6 +108,60 @@
     "last_verified_at": "2026-09-17"
   },
   {
+    "rule_id": "CK-001",
+    "version": "0.4-core",
+    "title": "Privacy policy discloses relevant cookies, identifiers, or tracking technologies",
+    "pass_summary": "Privacy policy discloses relevant cookies, identifiers, or tracking technologies.",
+    "module": "PERSONAL_DATA",
+    "evaluator_type": "LLM_SEMANTIC",
+    "legal_strength": "MANDATORY",
+    "status_if_triggered": "FAIL",
+    "applies_to": ["B2B", "B2C_SERVICE", "ECOMMERCE", "OTHER"],
+    "required_facts": ["privacy_policy_text"],
+    "evidence_requirements": ["privacy_policy_text", "cookie_metadata", "local_storage_keys", "session_storage_keys", "network_request_hosts", "external_service_matches"],
+    "legal_basis": ["152-ФЗ, ст. 18.1 ч. 1 п. 2, ч. 2"],
+    "severity": "MEDIUM",
+    "evaluation": {
+      "kind": "SEMANTIC_CRITERION",
+      "criterion": "Determine whether the supplied privacy policy meaningfully discloses the relevant cookies, browser storage identifiers, analytics, advertising, marketing, or tracking technologies shown in the technical evidence. Treat the required element as PRESENT when the policy describes the relevant identifiers/cookies or equivalent categories and explains their purposes or data categories, such as analytics, advertising, personalization, marketing, device identifiers, cookies, or similar tracking technologies. Treat it as ABSENT only when there is strong relevant identifier/tracker evidence, the policy evidence is complete, and the policy clearly lacks such disclosure. Use AMBIGUOUS when it is unclear whether the identifiers constitute personal data, when the technical evidence is only ordinary necessary/session cookies, or when the policy/evidence is incomplete. Do not infer a legal violation from the mere existence of any cookie.",
+      "evidence_fact_types": ["privacy_policy_text", "cookie_metadata", "local_storage_keys", "session_storage_keys", "network_request_hosts", "external_service_matches"]
+    },
+    "remediation": "Keep remediation in application logic; this shadow rule does not create user-facing findings.",
+    "confidence_policy": {
+      "fixed_confidence": 0.8
+    },
+    "limitations": ["Requires relevant cookie, storage, tracker, analytics, advertising, or marketing evidence and privacy-policy text. Any cookie alone is not enough."],
+    "effective_from": "2026-09-19",
+    "last_verified_at": "2026-09-19"
+  },
+  {
+    "rule_id": "CK-004",
+    "version": "0.4-core",
+    "title": "Cookie, analytics, or marketing consent is separate from mandatory terms",
+    "pass_summary": "Cookie, analytics, or marketing consent is distinguishable from mandatory terms.",
+    "module": "PERSONAL_DATA",
+    "evaluator_type": "LLM_SEMANTIC",
+    "legal_strength": "MANDATORY",
+    "status_if_triggered": "FAIL",
+    "applies_to": ["B2B", "B2C_SERVICE", "ECOMMERCE", "OTHER"],
+    "required_facts": [],
+    "evidence_requirements": ["rendered_consent_text", "consent_text", "marketing_consent_control_found", "rendered_marketing_consent_found"],
+    "legal_basis": ["152-ФЗ, ст. 9"],
+    "severity": "MEDIUM",
+    "evaluation": {
+      "kind": "SEMANTIC_CRITERION",
+      "criterion": "Determine whether optional cookie, analytics, advertising, marketing, or tracking consent is distinguishable from mandatory personal-data processing consent, offer acceptance, contract acceptance, user agreement, or other mandatory terms. Treat the required element as PRESENT when the evidence shows a separate optional control or clearly separate optional wording for cookie/analytics/marketing/tracking consent. Treat it as ABSENT when one mandatory control or one mandatory wording combines optional analytics, marketing, advertising, cookies, or tracking consent with mandatory terms, offer, contract, user agreement, or required personal-data processing consent. Use AMBIGUOUS when the evidence is incomplete or does not show whether the control is optional or mandatory. Do not evaluate this rule from cookie existence alone.",
+      "evidence_fact_types": ["rendered_consent_text", "consent_text", "marketing_consent_control_found", "rendered_marketing_consent_found"]
+    },
+    "remediation": "Keep remediation in application logic; this shadow rule does not create user-facing findings.",
+    "confidence_policy": {
+      "fixed_confidence": 0.8
+    },
+    "limitations": ["Requires consent text that connects cookie, analytics, marketing, or tracking consent with mandatory terms context. Cookie presence alone is not enough."],
+    "effective_from": "2026-09-19",
+    "last_verified_at": "2026-09-19"
+  },
+  {
     "rule_id": "PD-013",
     "version": "0.2-shadow",
     "title": "Privacy policy describes personal-data processing purposes",
@@ -119,7 +173,7 @@
     "applies_to": ["B2B", "B2C_SERVICE", "ECOMMERCE", "OTHER"],
     "required_facts": ["privacy_policy_text"],
     "evidence_requirements": ["privacy_policy_text"],
-    "legal_basis": [],
+    "legal_basis": ["152-ФЗ, ст. 18.1 ч. 1 п. 2, ч. 2"],
     "severity": "MEDIUM",
     "evaluation": {
       "kind": "SEMANTIC_CRITERION",
@@ -146,7 +200,7 @@
     "applies_to": ["B2B", "B2C_SERVICE", "ECOMMERCE", "OTHER"],
     "required_facts": ["privacy_policy_text"],
     "evidence_requirements": ["privacy_policy_text"],
-    "legal_basis": [],
+    "legal_basis": ["152-ФЗ, ст. 18.1 ч. 1 п. 2, ч. 2"],
     "severity": "MEDIUM",
     "evaluation": {
       "kind": "SEMANTIC_CRITERION",
@@ -173,7 +227,7 @@
     "applies_to": ["B2B", "B2C_SERVICE", "ECOMMERCE", "OTHER"],
     "required_facts": ["privacy_policy_text"],
     "evidence_requirements": ["privacy_policy_text"],
-    "legal_basis": [],
+    "legal_basis": ["152-ФЗ, ст. 18.1 ч. 1 п. 2, ч. 2"],
     "severity": "MEDIUM",
     "evaluation": {
       "kind": "SEMANTIC_CRITERION",
@@ -200,7 +254,7 @@
     "applies_to": ["B2B", "B2C_SERVICE", "ECOMMERCE", "OTHER"],
     "required_facts": ["privacy_policy_text"],
     "evidence_requirements": ["privacy_policy_text"],
-    "legal_basis": [],
+    "legal_basis": ["152-ФЗ, ст. 18.1 ч. 1 п. 2, ч. 2"],
     "severity": "MEDIUM",
     "evaluation": {
       "kind": "SEMANTIC_CRITERION",
@@ -227,7 +281,7 @@
     "applies_to": ["B2B", "B2C_SERVICE", "ECOMMERCE", "OTHER"],
     "required_facts": ["form_fields", "privacy_policy_text"],
     "evidence_requirements": ["form_fields", "privacy_policy_text"],
-    "legal_basis": [],
+    "legal_basis": ["152-ФЗ, ст. 18.1 ч. 1 п. 2, ч. 2"],
     "severity": "MEDIUM",
     "evaluation": {
       "kind": "SEMANTIC_CRITERION",
@@ -254,7 +308,7 @@
     "applies_to": ["B2B", "B2C_SERVICE", "ECOMMERCE", "OTHER"],
     "required_facts": ["external_service_matches", "privacy_policy_text"],
     "evidence_requirements": ["external_service_matches", "privacy_policy_text"],
-    "legal_basis": [],
+    "legal_basis": ["152-ФЗ, ст. 18.1 ч. 1 п. 2, ч. 2"],
     "severity": "MEDIUM",
     "evaluation": {
       "kind": "SEMANTIC_CRITERION",
@@ -281,7 +335,7 @@
     "applies_to": ["B2B", "B2C_SERVICE", "ECOMMERCE", "OTHER"],
     "required_facts": ["external_service_matches", "privacy_policy_text"],
     "evidence_requirements": ["external_service_matches", "privacy_policy_text"],
-    "legal_basis": [],
+    "legal_basis": ["152-ФЗ, ст. 18.1 ч. 1 п. 2, ч. 2"],
     "severity": "MEDIUM",
     "evaluation": {
       "kind": "SEMANTIC_CRITERION",

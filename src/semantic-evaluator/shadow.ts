@@ -84,6 +84,12 @@ export async function evaluateSemanticRulesShadow(
       continue;
     }
 
+    const applicabilityReason = semanticRuleApplicabilityBlockReason(rule, input.facts, evidencePackage);
+    if (applicabilityReason) {
+      results.push(noShadowEvaluation(rule, applicabilityReason));
+      continue;
+    }
+
     if (evaluation.context?.requires_policy_no_third_party_claim === true && !hasNoThirdPartyTransferClaim(evidencePackage)) {
       results.push(noShadowEvaluation(rule, "Rule is not applicable because policy has no explicit no-transfer claim."));
       continue;
@@ -124,7 +130,7 @@ export async function evaluateSemanticRulesShadow(
       timeoutMs: input.timeoutMs,
       onDiagnostic: input.onDiagnostic
     });
-    const result = guardTruncatedPolicyFail(rawResult, evidencePackage);
+    const result = guardCookiePolicyCompletenessFail(rule.ruleId, guardTruncatedPolicyFail(rawResult, evidencePackage), evidencePackage);
 
     results.push({
       ruleId: rule.ruleId,
@@ -219,6 +225,18 @@ function structuredEvidenceText(fact: Fact, evidence: Evidence): string | undefi
     return externalServiceEvidenceText(fact);
   }
 
+  if (fact.factType === "cookie_metadata") {
+    return cookieMetadataEvidenceText(fact);
+  }
+
+  if (fact.factType === "local_storage_keys" || fact.factType === "session_storage_keys") {
+    return storageKeysEvidenceText(fact);
+  }
+
+  if (fact.factType === "network_request_hosts" || fact.factType === "script_sources_rendered" || fact.factType === "iframe_sources_rendered") {
+    return hostListEvidenceText(fact);
+  }
+
   return undefined;
 }
 
@@ -278,6 +296,90 @@ function externalServiceEvidenceText(fact: Fact): string | undefined {
   ]
     .filter(Boolean)
     .join(" ");
+}
+
+function cookieMetadataEvidenceText(fact: Fact): string | undefined {
+  const names = arrayOfStrings(fact.value.cookieNames ?? fact.value.names ?? fact.value.cookies);
+  const domains = arrayOfStrings(fact.value.domains);
+  if (names.length === 0 && domains.length === 0) {
+    return undefined;
+  }
+  return [
+    `Browser state contains cookies on ${sanitizeUrlForModel(fact.pageUrl) ?? "the checked page"}.`,
+    names.length > 0 ? `Cookie names: ${names.slice(0, 20).join(", ")}.` : undefined,
+    domains.length > 0 ? `Cookie domains: ${domains.slice(0, 20).join(", ")}.` : undefined
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function storageKeysEvidenceText(fact: Fact): string | undefined {
+  const keys = arrayOfStrings(fact.value.keys);
+  if (keys.length === 0) {
+    return undefined;
+  }
+  const storage = fact.factType === "local_storage_keys" ? "localStorage" : "sessionStorage";
+  return `${storage} keys observed on ${sanitizeUrlForModel(fact.pageUrl) ?? "the checked page"}: ${keys.slice(0, 30).join(", ")}.`;
+}
+
+function hostListEvidenceText(fact: Fact): string | undefined {
+  const hosts = arrayOfStrings(fact.value.hosts ?? fact.value.sources ?? fact.value.urls);
+  if (hosts.length === 0) {
+    return undefined;
+  }
+  return `Observed ${fact.factType} on ${sanitizeUrlForModel(fact.pageUrl) ?? "the checked page"}: ${hosts.slice(0, 30).join(", ")}.`;
+}
+
+function semanticRuleApplicabilityBlockReason(
+  rule: Rule,
+  facts: Fact[],
+  evidencePackage: SemanticEvidenceExcerpt[]
+): string | undefined {
+  if (rule.ruleId === "CK-001") {
+    if (!evidencePackage.some((item) => item.metadata?.factType === "privacy_policy_text")) {
+      return "Cookie disclosure check requires privacy policy text.";
+    }
+    if (!hasRelevantCookieOrTrackerContext(facts, evidencePackage)) {
+      return "Cookie disclosure check requires relevant cookie, storage, tracker, or analytics context.";
+    }
+  }
+
+  if (rule.ruleId === "CK-004" && !hasBundledCookieConsentContext(evidencePackage)) {
+    return "Cookie consent separation check requires cookie, analytics, or marketing consent together with mandatory terms context.";
+  }
+
+  return undefined;
+}
+
+function hasRelevantCookieOrTrackerContext(facts: Fact[], evidencePackage: SemanticEvidenceExcerpt[]): boolean {
+  const factText = facts
+    .filter((fact) =>
+      ["cookie_metadata", "local_storage_keys", "session_storage_keys", "network_request_hosts", "script_sources_rendered", "iframe_sources_rendered", "external_service_matches"].includes(
+        fact.factType
+      )
+    )
+    .map((fact) => JSON.stringify(fact.value))
+    .join(" ");
+  const evidenceText = evidencePackage.map((item) => item.excerpt).join(" ");
+  return isRelevantCookieOrTrackerText(`${factText} ${evidenceText}`);
+}
+
+function hasBundledCookieConsentContext(evidencePackage: SemanticEvidenceExcerpt[]): boolean {
+  const text = evidencePackage.map((item) => item.excerpt).join(" ").toLowerCase();
+  const hasTrackingConsent = /(cookie|cookies|куки|аналитик|analytics|метрик|маркетинг|маркетингов|реклам|рассыл|трекер|tracking|статистик)/i.test(
+    text
+  );
+  const hasMandatoryContext =
+    /(персональн[а-я\s-]*данн|обработк[а-я\s-]*данн|оферт|договор|пользовательск|соглашени|услови|terms|agreement|privacy|policy)/i.test(
+      text
+    );
+  return hasTrackingConsent && hasMandatoryContext;
+}
+
+function isRelevantCookieOrTrackerText(text: string): boolean {
+  return /(_ga|_gid|_ym|ym_|tmr_lvid|roistat|fbp|fbc|uid|userid|user_id|clientid|client_id|visitor|tracking|analytics|marketing|advert|ads?|doubleclick|googletagmanager|google-analytics|metrika|mc\.yandex|retarget|remarket|pixel|email_marketing|crm|session|checkout|phone|email)/i.test(
+    text
+  );
 }
 
 function hasNoThirdPartyTransferClaim(evidence: SemanticEvidenceExcerpt[]): boolean {
@@ -367,7 +469,14 @@ function modelFacingFactValue(fact: Fact): Record<string, unknown> {
     truncated: fact.value.truncated,
     originalTextLength: fact.value.originalTextLength,
     textLength: fact.value.textLength,
-    maxChars: fact.value.maxChars
+    maxChars: fact.value.maxChars,
+    serviceName: fact.value.service_name,
+    serviceCategory: fact.value.category,
+    signalType: fact.value.signal_type,
+    matchedHost: fact.value.matched_host,
+    cookieNames: fact.value.cookieNames,
+    storageKeys: fact.value.keys,
+    hosts: fact.value.hosts
   };
 }
 
@@ -388,6 +497,13 @@ function asString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+function arrayOfStrings(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+}
+
 function guardTruncatedPolicyFail(
   result: SemanticEvaluationResult,
   evidencePackage: SemanticEvidenceExcerpt[]
@@ -402,6 +518,33 @@ function guardTruncatedPolicyFail(
     confidence: Math.min(result.confidence, 0.5),
     reasonCode: "TRUNCATED_POLICY_REQUIRES_MANUAL_CHECK",
     reason: "Policy evidence was truncated, so shadow mode cannot produce an absence-based FAIL.",
+    evidenceRefs: result.evidenceRefs
+  };
+  return guarded;
+}
+
+function guardCookiePolicyCompletenessFail(
+  ruleId: string,
+  result: SemanticEvaluationResult,
+  evidencePackage: SemanticEvidenceExcerpt[]
+): SemanticEvaluationResult {
+  if (ruleId !== "CK-001" || result.status !== "FAIL") {
+    return result;
+  }
+
+  const hasCompletePolicy = evidencePackage.some(
+    (item) => item.metadata?.factType === "privacy_policy_text" && item.completeness === "COMPLETE"
+  );
+  if (hasCompletePolicy) {
+    return result;
+  }
+
+  const guarded: SemanticEvaluation = {
+    status: "MANUAL_CHECK",
+    observation: result.observation,
+    confidence: Math.min(result.confidence, 0.5),
+    reasonCode: "COOKIE_POLICY_EVIDENCE_REQUIRES_MANUAL_CHECK",
+    reason: "Cookie disclosure evidence is incomplete, so shadow mode cannot produce an absence-based FAIL.",
     evidenceRefs: result.evidenceRefs
   };
   return guarded;

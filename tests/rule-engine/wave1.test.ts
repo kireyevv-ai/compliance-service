@@ -143,10 +143,10 @@ describe("Wave 1 runtime rule engine", () => {
     db = createTestDb();
   });
 
-  it("loads 21 versioned runtime rules", () => {
+  it("loads 23 versioned runtime rules", () => {
     const rules = loadRuntimeRules();
 
-    expect(rules).toHaveLength(21);
+    expect(rules).toHaveLength(23);
     expect(rules.map((rule) => rule.ruleId)).toEqual([
       "PD-001",
       "PD-002",
@@ -156,6 +156,8 @@ describe("Wave 1 runtime rule engine", () => {
       "PD-011",
       "PD-020",
       "PD-021",
+      "CK-002",
+      "CK-003",
       "EC-001",
       "EC-002",
       "EC-003",
@@ -623,6 +625,81 @@ describe("Wave 1 runtime rule engine", () => {
     expect(statusFor(marketingUnchecked.evaluations, "PD-011")).toBe("PASS");
     expect(statusFor(pdConsentOnly.evaluations, "PD-011")).toBe("NO_EVALUATION");
     expect(statusFor(noMarketingContext.evaluations, "PD-011")).toBe("NO_EVALUATION");
+  });
+
+  it("evaluates CK-002 only for explicit optional cookie or tracking consent controls", async () => {
+    const cookieChecked = await evaluateScenario({
+      db,
+      siteType: "B2B",
+      facts: [
+        extractedFact("rendered_consent_control_found", { found: true, formIndex: 0, controlIndex: 1 }, "https://example.test/"),
+        extractedFact("rendered_consent_text", { text: "Согласен на использование cookie для аналитики", formIndex: 0, controlIndex: 1 }, "https://example.test/"),
+        extractedFact("rendered_consent_checked", { checked: true, formIndex: 0, controlIndex: 1 }, "https://example.test/")
+      ]
+    });
+    const cookieUnchecked = await evaluateScenario({
+      db,
+      siteType: "B2B",
+      facts: [
+        extractedFact("rendered_consent_control_found", { found: true, formIndex: 0, controlIndex: 1 }, "https://example.test/"),
+        extractedFact("rendered_consent_text", { text: "Согласен на cookie и аналитику", formIndex: 0, controlIndex: 1 }, "https://example.test/"),
+        extractedFact("rendered_consent_checked", { checked: false, formIndex: 0, controlIndex: 1 }, "https://example.test/")
+      ]
+    });
+    const mandatoryPdOnly = await evaluateScenario({
+      db,
+      siteType: "B2B",
+      facts: [
+        extractedFact("rendered_consent_control_found", { found: true, formIndex: 0, controlIndex: 1 }, "https://example.test/"),
+        extractedFact("rendered_consent_text", { text: "Согласен на обработку персональных данных", formIndex: 0, controlIndex: 1 }, "https://example.test/"),
+        extractedFact("rendered_consent_checked", { checked: true, formIndex: 0, controlIndex: 1 }, "https://example.test/")
+      ]
+    });
+    const missingCheckedState = await evaluateScenario({
+      db,
+      siteType: "B2B",
+      facts: [
+        extractedFact("rendered_consent_control_found", { found: true, formIndex: 0, controlIndex: 1 }, "https://example.test/"),
+        extractedFact("rendered_consent_text", { text: "Согласен на использование cookie", formIndex: 0, controlIndex: 1 }, "https://example.test/")
+      ]
+    });
+
+    expect(statusFor(cookieChecked.evaluations, "CK-002")).toBe("FAIL");
+    expect(statusFor(cookieUnchecked.evaluations, "CK-002")).toBe("PASS");
+    expect(statusFor(mandatoryPdOnly.evaluations, "CK-002")).toBe("NO_EVALUATION");
+    expect(statusFor(missingCheckedState.evaluations, "CK-002")).toBe("NO_EVALUATION");
+  });
+
+  it("keeps CK-003 as MANUAL_CHECK-only for pre-interaction marketing or analytics tracker signals", async () => {
+    const tracker = await evaluateScenario({
+      db,
+      siteType: "B2B",
+      facts: [
+        extractedFact("external_service_detected", { detected: true }, "https://example.test/"),
+        extractedFact("external_service_matches", {
+          service_name: "Yandex Metrica",
+          category: "analytics",
+          signal_type: "SCRIPT",
+          matched_host: "mc.yandex.ru"
+        }, "https://example.test/")
+      ]
+    });
+    const technicalServiceOnly = await evaluateScenario({
+      db,
+      siteType: "B2B",
+      facts: [
+        extractedFact("external_service_detected", { detected: true }, "https://example.test/"),
+        extractedFact("external_service_matches", {
+          service_name: "Static CDN",
+          category: "technical_asset",
+          signal_type: "SCRIPT",
+          matched_host: "cdn.example"
+        }, "https://example.test/")
+      ]
+    });
+
+    expect(statusFor(tracker.evaluations, "CK-003")).toBe("MANUAL_CHECK");
+    expect(statusFor(technicalServiceOnly.evaluations, "CK-003")).toBe("NO_EVALUATION");
   });
 
   it("evaluates PD-020 as a same-page foreign-provider risk signal only for personal-data pages", async () => {
