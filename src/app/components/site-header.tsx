@@ -6,7 +6,6 @@ export function SiteHeader() {
           СайтНорма
         </a>
         <nav className="home-nav" aria-label="Основная навигация">
-          <a href="/#advantages">Как это работает</a>
           <a href="/#what-we-check">Что проверяем</a>
           <span>Тарифы</span>
           <span>Нормативная база</span>
