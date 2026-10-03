@@ -1,4 +1,5 @@
 import { HomepageScanForm } from "@/app/components/homepage-scan-form";
+import { SiteHeader } from "@/app/components/site-header";
 
 const advantages = [
   { title: "Быстро", detail: "Проверка занимает несколько минут" },
@@ -7,26 +8,21 @@ const advantages = [
   { title: "Честно", detail: "Показываем ограничения проверки" }
 ] as const;
 
+const coverageAreas = [
+  "Персональные данные",
+  "Cookies и аналитика",
+  "Сведения о владельце",
+  "Продажа товаров и услуг",
+  "Реклама и рассылки",
+  "Рекомендательные технологии",
+  "Обязательная информация",
+  "Русский язык"
+] as const;
+
 export default function HomePage() {
   return (
     <main className="homepage">
-      <header className="home-header">
-        <div className="home-container home-header-inner">
-          <a className="home-wordmark" href="/" aria-label="СайтНорма — главная">
-            СайтНорма
-          </a>
-          <nav className="home-nav" aria-label="Основная навигация">
-            <a href="#advantages">Как это работает</a>
-            <span>Что проверяем</span>
-            <span>Тарифы</span>
-            <span>Нормативная база</span>
-          </nav>
-          <div className="home-header-actions">
-            <a className="home-login-link" href="/beta">Войти</a>
-            <a className="home-header-link" href="#site-address">Проверить сайт</a>
-          </div>
-        </div>
-      </header>
+      <SiteHeader />
 
       <section className="home-hero" aria-labelledby="home-title">
         <div className="home-container home-hero-inner">
@@ -53,6 +49,27 @@ export default function HomePage() {
           ))}
         </div>
       </section>
+
+      <section className="home-coverage" id="what-we-check" aria-labelledby="home-coverage-title">
+        <div className="home-container home-coverage-inner">
+          <div className="home-coverage-intro">
+            <h2 id="home-coverage-title">Что проверяет СайтНорма</h2>
+            <p>Проверяем только те требования, которые применимы к конкретному сайту и его функциональности.</p>
+          </div>
+          <div className="home-coverage-grid" id="what-we-check-list">
+            {coverageAreas.map((area) => (
+              <div className="home-coverage-item" key={area}>
+                <h3>{area}</h3>
+              </div>
+            ))}
+          </div>
+          <div className="home-coverage-footer">
+            <p>До 58 применимых правил. Конкретный набор зависит от типа сайта и его функциональности.</p>
+            <a href="#what-we-check-list">Посмотреть все направления <span aria-hidden="true">→</span></a>
+          </div>
+        </div>
+      </section>
+
     </main>
   );
 }
