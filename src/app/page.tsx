@@ -1,4 +1,5 @@
 import { HomepageScanForm } from "@/app/components/homepage-scan-form";
+import { HomepagePricing } from "@/app/components/homepage-pricing";
 import { SiteHeader } from "@/app/components/site-header";
 
 const advantages = [
@@ -69,6 +70,8 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+
+      <HomepagePricing />
 
     </main>
   );

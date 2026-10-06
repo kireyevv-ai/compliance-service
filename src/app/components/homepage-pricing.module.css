@@ -1,0 +1,371 @@
+.pricing {
+  padding: 72px 0 96px;
+  background: #fbfcfe;
+}
+
+.pricingInner {
+  max-width: 1440px;
+}
+
+.pricingIntro {
+  max-width: 1120px;
+  margin: 0 auto 36px;
+  text-align: center;
+}
+
+.pricingIntro h2 {
+  margin: 0;
+  color: #142340;
+  font-size: clamp(1.8rem, 2.6vw, 2.4rem);
+  font-weight: 650;
+  line-height: 1.14;
+  text-wrap: balance;
+}
+
+.pricingIntro p {
+  max-width: 1040px;
+  margin: 12px auto 0;
+  color: #5c6f8b;
+  font-size: 1.0625rem;
+  line-height: 1.5;
+  text-wrap: pretty;
+  white-space: nowrap;
+}
+
+.expressPlan {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(240px, 0.78fr) minmax(250px, 0.88fr);
+  align-items: center;
+  gap: 36px;
+  border: 1px solid #dce8f7;
+  border-radius: 20px;
+  padding: 20px 34px;
+  background: #f0f6fe;
+}
+
+.expressSummary {
+  min-width: 0;
+}
+
+.planLabel {
+  margin: 0 0 12px;
+  color: #587092;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.expressSummary .planLabel {
+  margin-bottom: 7px;
+  color: #2868c4;
+}
+
+.expressSummary h3,
+.planCard h3 {
+  margin: 0;
+  color: #142340;
+  font-size: 1.7rem;
+  font-weight: 650;
+  line-height: 1.2;
+  text-wrap: balance;
+}
+
+.expressSummary h3 {
+  font-size: 1.625rem;
+}
+
+.planDescription {
+  margin: 10px 0 0;
+  color: #4f6380;
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+.expressFeatures,
+.planFeatures {
+  display: grid;
+  gap: 9px;
+  margin: 0;
+  padding: 0;
+  color: #344b6b;
+  list-style: none;
+}
+
+.expressFeatures {
+  gap: 6px;
+  border-left: 1px solid #d9e5f3;
+  padding-left: 26px;
+}
+
+.expressFeatures li {
+  line-height: 1.34;
+}
+
+.expressSummary .planDescription {
+  margin-top: 7px;
+}
+
+.expressFeatures li,
+.planFeatures li {
+  position: relative;
+  padding-left: 25px;
+  font-size: 0.97rem;
+  line-height: 1.4;
+}
+
+.expressFeatures li::before,
+.planFeatures li::before {
+  position: absolute;
+  left: 0;
+  color: #2868c4;
+  content: "✓";
+  font-weight: 700;
+}
+
+.expressAction {
+  display: grid;
+  justify-items: stretch;
+  gap: 6px;
+}
+
+.expressAction .primaryAction {
+  min-height: 50px;
+}
+
+.expressAction p {
+  margin: 0;
+  color: #71829a;
+  font-size: 0.88rem;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.primaryAction,
+.secondaryAction {
+  display: inline-flex;
+  min-height: 54px;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  padding: 0 20px;
+  font-size: 1rem;
+  font-weight: 650;
+  line-height: 1.25;
+  text-align: center;
+  text-decoration: none;
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, box-shadow 150ms ease;
+}
+
+.primaryAction {
+  background: #2868c4;
+  color: #fff;
+}
+
+.primaryAction:hover {
+  background: #225ba9;
+  box-shadow: 0 5px 16px rgb(35 91 169 / 16%);
+}
+
+.secondaryAction {
+  border-color: #c9d7e9;
+  background: #fff;
+  color: #172944;
+}
+
+.secondaryAction:hover {
+  border-color: #8aabd7;
+  background: #f6f9fe;
+}
+
+.primaryAction:focus-visible,
+.secondaryAction:focus-visible {
+  outline: 3px solid #91b9ed;
+  outline-offset: 3px;
+}
+
+.planGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 18px;
+  margin-top: 24px;
+}
+
+.planCard {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 14px;
+  border: 1px solid #e1e9f3;
+  border-radius: 20px;
+  padding: 22px 26px 20px;
+  background: #fff;
+  box-shadow: 0 8px 26px rgb(24 48 82 / 4%);
+}
+
+.featuredPlan {
+  border-color: #83afea;
+  background: #f3f8ff;
+  box-shadow: 0 12px 30px rgb(31 91 165 / 9%);
+}
+
+.popularBadge {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  border-radius: 9999px;
+  padding: 5px 11px;
+  background: #2868c4;
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.planMeta {
+  display: flex;
+  min-height: 24px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.planMeta .planLabel {
+  margin: 0;
+}
+
+.price {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 6px 0 0;
+  color: #142340;
+  line-height: 1.2;
+}
+
+.price strong {
+  font-size: 2rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.price span {
+  color: #73839b;
+  font-size: 1rem;
+}
+
+.planFeatures {
+  gap: 6px;
+  border-top: 1px solid #e4ebf4;
+  margin-top: 10px;
+  padding-top: 11px;
+}
+
+.planFeatures li {
+  line-height: 1.32;
+}
+
+.featuredPlan .planFeatures {
+  border-color: #d7e5f6;
+}
+
+.planCard > a {
+  width: 100%;
+  min-height: 50px;
+}
+
+@media (max-width: 1050px) {
+  .pricingIntro p {
+    white-space: normal;
+  }
+
+  .expressPlan {
+    grid-template-columns: minmax(0, 1.05fr) minmax(200px, 0.85fr);
+    gap: 24px;
+  }
+
+  .expressFeatures {
+    border-left: 0;
+    padding-left: 0;
+  }
+
+  .expressAction {
+    grid-column: 1 / -1;
+    max-width: 360px;
+    justify-self: end;
+    width: 100%;
+  }
+
+  .planGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px;
+  }
+
+  .planCard:last-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 760px) {
+  .pricing {
+    padding: 52px 0 64px;
+  }
+
+  .pricingIntro {
+    margin-bottom: 26px;
+    text-align: left;
+  }
+
+  .pricingIntro h2 {
+    font-size: 1.9rem;
+  }
+
+  .pricingIntro p {
+    margin-top: 10px;
+    font-size: 1rem;
+    white-space: normal;
+  }
+
+  .expressPlan {
+    grid-template-columns: 1fr;
+    gap: 14px;
+    border-radius: 18px;
+    padding: 16px 22px;
+  }
+
+  .expressAction {
+    grid-column: auto;
+    max-width: none;
+  }
+
+  .planGrid {
+    grid-template-columns: 1fr;
+    gap: 18px;
+    margin-top: 18px;
+  }
+
+  .planCard:last-child {
+    grid-column: auto;
+  }
+
+  .planCard {
+    gap: 14px;
+    padding: 22px 22px 20px;
+  }
+
+  .featuredPlan {
+    margin-top: 7px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .primaryAction,
+  .secondaryAction {
+    transition: none;
+  }
+}
